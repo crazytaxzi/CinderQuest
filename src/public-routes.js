@@ -28,11 +28,11 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
     const session = probes.get(safeToken);
     if (!session || session.expiresAt < Date.now()) {
       probes.delete(safeToken);
-      return { error: "That playback test expired. Choose the song again." };
+      return { error: "That playback test went cold. Pick the song again and I’ll give it another squeeze." };
     }
     if (session.requester !== requester
       || session.requesterKey !== requesterKey(requester, ip)) {
-      return { error: "That playback test belongs to another request session." };
+      return { error: "That test belongs to somebody else’s request. Hands off." };
     }
     probes.delete(safeToken);
     return { session };
@@ -50,11 +50,11 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
   app.get("/api/search", searchLimiter, async (req, res, next) => {
     try {
       if (!store.state.settings.allowSearch) {
-        return res.status(403).json({ error: "Search is disabled. Paste a YouTube URL instead." });
+        return res.status(403).json({ error: "Search is sleeping. Slip me a YouTube link instead." });
       }
       const query = clean(req.query.q, 100);
       if (query.length < 2) {
-        return res.status(400).json({ error: "Search needs at least two characters." });
+        return res.status(400).json({ error: "Give me at least two characters to hunt with." });
       }
       const body = await youtube.youtubeGet("search", {
         part: "snippet",
@@ -84,7 +84,7 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
   app.post("/api/video-preview", requestLimiter, async (req, res, next) => {
     try {
       const id = youtube.extractVideoId(req.body?.input);
-      if (!id) return res.status(400).json({ error: "Paste a valid YouTube video URL or ID." });
+      if (!id) return res.status(400).json({ error: "That is not a YouTube video link I can sink my teeth into." });
       const video = await youtube.fetchVideo(id);
       const error = youtube.contentRule(video);
       if (error) return res.status(400).json({ error, videoId: id });
@@ -98,7 +98,7 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
     try {
       const requester = normalizeRequester(req.body?.requester);
       const id = youtube.extractVideoId(req.body?.input || req.body?.videoId);
-      if (!id) return res.status(400).json({ error: "Choose a valid YouTube video first." });
+      if (!id) return res.status(400).json({ error: "Pick a real YouTube video before asking me to test it." });
       const video = await youtube.fetchVideo(id);
       const error = youtube.requestRule(video, requester, req.ip);
       if (error) return res.status(400).json({ error, videoId: id });
@@ -111,6 +111,12 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
     } catch (error) {
       next(error);
     }
+  });
+
+  app.delete("/api/requests/probe/:token", requestLimiter, (req, res) => {
+    const token = clean(req.params.token, 80);
+    probes.delete(token);
+    res.status(204).end();
   });
 
   app.post("/api/requests/probe/:token/pass", requestLimiter, (req, res) => {
@@ -138,8 +144,8 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
       item: { ...item, requesterKey: undefined },
       position: item.status === "queued" ? store.queuePosition(item.id) : null,
       message: item.status === "pending"
-        ? "Playback test passed. Request submitted for approval."
-        : "Playback test passed. Your song is in the queue."
+        ? "It passed my test. Now it is waiting for Cinder’s final judgment."
+        : "It passed. Your song is officially in line."
     });
   });
 
@@ -160,12 +166,12 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
       videoId: result.session.video.videoId,
       reason,
       message: blocked
-        ? "This video failed the playback test and has been blocked."
+        ? "That video failed the real player test, so I put its ID on the no-touch list."
         : reason
     });
   });
 
   app.post("/api/requests", requestLimiter, (_req, res) => res.status(409).json({
-    error: "Playback testing is required. Use the current request page."
+    error: "Nice try. Every request has to survive the playback test first."
   }));
 }
