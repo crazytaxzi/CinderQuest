@@ -89,6 +89,17 @@ Use `/overlay` as a Browser Source. A practical starting size is `1000 × 240`. 
 
 Keep the Player Stage visible somewhere on stream. Capture its audio through OBS Application Audio Capture, VoiceMeeter, MixLine, or the rest of your preferred audio ritual.
 
+## Version 0.2.2
+
+- Treats undocumented YouTube error `105` as transient rather than permanently banning the video.
+- Retries error `105` once in both the viewer probe and main player.
+- Automatically releases old auto-blocked `105` records on startup.
+- Prefers IPv4 for server-side YouTube API DNS resolution.
+- Adds manual **Ban This Video** controls for the current track and queued requests.
+- Makes history and blocked-video lists independently scrollable.
+- Keeps the emergency playlist, settings, and OBS cards compact in a sticky dashboard sidebar.
+- Clips overlay haze and particles to the current-song card.
+
 ## Version 0.2.1
 
 - Rewrote viewer, dashboard, player, overlay, status, empty-state, and common error copy in Cinder's voice.
