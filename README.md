@@ -1,106 +1,105 @@
 # CinderQuest
 
-CinderQuest is a self-hosted, browser-based YouTube song request system for livestreams. It includes a public request page, moderator dashboard, visible YouTube player stage, persistent fallback playlist, and transparent OBS now-playing overlay.
+CinderQuest is a self-hosted HellGlass YouTube song requester for streams. It includes a viewer request pit, Cinder's control room, a visible YouTube player stage, a transparent OBS overlay, a persistent emergency playlist, queue history, and a remembered no-touch list for videos that fail playback.
 
-## Current feature set
+## Pages
 
-- HellGlass styling across viewer, dashboard, player, and OBS overlay pages
-- YouTube URL requests and optional YouTube search in one request card
-- Modal search results with a `Choose Me` flow
-- Requester name and optional note collected after choosing a video
-- Visible, muted YouTube IFrame compatibility probe before queue insertion
-- Failed probe popup with the YouTube player error reason
-- Persistent blocked-video IDs for confirmed player failures
-- Failed search results automatically excluded when the chooser reopens
-- Dashboard list of blocked IDs with individual unblock controls
-- Request approval, cooldowns, duplicate blocking, duration limits, keyword/channel blocks
-- Persistent playlist import with shuffle or sequential fallback playback
-- Queue, settings, playlist, history, and quarantine persistence in `data/state.json`
-- Play, pause, skip, mute, volume, and queue-order controls
-- Live state updates through Socket.IO
+- `/` — viewer request pit
+- `/dashboard` — Cinder's control room
+- `/player` — visible YouTube player stage
+- `/overlay` — transparent HellGlass OBS overlay
+- `/api/health` — health check
+
+## Request flow
+
+Viewers can slip in a YouTube URL or hunt by artist and title. Search results open in a modal, where the viewer chooses a video, enters a display name, and may leave Cinder a note.
+
+Before a request touches the queue, CinderQuest creates a temporary probe session and loads the selected video in a muted YouTube IFrame player. A stable `PLAYING` or `CUED` state passes. Confirmed player errors are remembered by video ID and excluded from later searches and playlist imports.
+
+Closing the modal, pressing Escape, clicking the backdrop, or using **Never Mind, Let It Go** cancels the active probe. Late YouTube callbacks are ignored after cancellation, preventing stale success/failure loops.
 
 ## Requirements
 
 - Node.js 20 or newer
-- YouTube Data API v3 key
-- A long private admin token
+- A YouTube Data API v3 key
+- A strong admin token
+- The actual YouTube player kept visible somewhere on stream
 
-## Setup
+## Install from GitHub
 
 ```bash
+cd ~
+git clone https://github.com/crazytaxzi/CinderQuest.git songrequest
+cd songrequest
+git switch agent/hellglass-search-probe
 cp .env.example .env
 nano .env
 npm install
+npm run check
 npm start
 ```
 
-Configure `.env`:
+## Update from GitHub
+
+```bash
+cd ~/songrequest
+git pull --ff-only origin agent/hellglass-search-probe
+npm install
+npm run check
+```
+
+Then restart the process using either `npm start` or the configured systemd service.
+
+After the feature branch is merged, switch the VM to `main` once:
+
+```bash
+cd ~/songrequest
+git fetch origin
+git switch main
+git pull --ff-only origin main
+npm install
+npm run check
+```
+
+## Environment
 
 ```dotenv
 PORT=3417
 HOST=0.0.0.0
-ADMIN_TOKEN=replace-with-a-long-private-value
+ADMIN_TOKEN=replace-with-a-long-random-secret
 YOUTUBE_API_KEY=replace-with-your-youtube-data-api-key
-TRUST_PROXY=false
 PLAYBACK_REGION=US
+TRUST_PROXY=false
 ```
 
-Local pages:
+Never commit `.env` or `data/state.json`. Both are ignored by Git.
 
-- Viewer request page: `http://127.0.0.1:3417/`
-- Dashboard: `http://127.0.0.1:3417/dashboard`
-- Player stage: `http://127.0.0.1:3417/player`
-- OBS overlay: `http://127.0.0.1:3417/overlay`
+## Persistent state
 
-When deployed to a VM, use the VM's domain or external IP instead of `127.0.0.1`. Keep `HOST=0.0.0.0`; do not browse to `0.0.0.0`.
+Runtime data is saved in `data/state.json`, including:
 
-## Playback probe flow
-
-1. A viewer pastes a YouTube URL or searches for a video.
-2. Server-side metadata filters reject known private, removed, non-embeddable, age-restricted, live, durationless, region-blocked, overlong, duplicated, keyword-blocked, channel-blocked, or quarantined videos.
-3. The viewer supplies a display name and optional note.
-4. CinderQuest creates a short-lived probe session.
-5. A visible, muted 240 × 240 YouTube IFrame attempts to cue or play the selected video.
-6. A successful `CUED`, `BUFFERING`, or `PLAYING` state commits the request to the queue.
-7. Confirmed player failures with codes `5`, `100`, `101`, `105`, or `150` quarantine the video ID with its reason.
-8. Error `153` is treated as a site/referrer configuration failure and does not block the song.
-
-The legacy direct request endpoint refuses queue insertion without the playback probe.
-
-## Persistent files
-
-Do not commit these:
-
-```text
-.env
-data/state.json
-```
-
-Back up both before replacing a deployment. `data/state.json` contains playlist data, queue history, settings, and blocked-video records.
-
-## Linux upgrade helper
-
-The included `upgrade-linux.sh` preserves `.env` and the `data` directory while replacing application files from a release ZIP.
-
-```bash
-./upgrade-linux.sh "$HOME/CinderQuest_v0.2.0.zip" "$HOME/songrequest"
-```
+- queue and recent history
+- rules and volume
+- emergency playlist and cursor
+- blocked video IDs with their failure reason
 
 ## OBS
 
-Add a Browser Source:
+Use `/overlay` as a Browser Source. A practical starting size is `1000 × 240`. The overlay is transparent, while the viewer, dashboard, and player pages use the same HellGlass visual language over a full-page background.
 
-```text
-http://YOUR_HOST:3417/overlay
-```
+Keep the Player Stage visible somewhere on stream. Capture its audio through OBS Application Audio Capture, VoiceMeeter, MixLine, or the rest of your preferred audio ritual.
 
-Suggested size: `1000 × 240`.
+## Version 0.2.1
 
-Use the Player Stage in a normal browser for the official visible YouTube player. Capture that browser's audio through OBS Application Audio Capture or your normal VoiceMeeter/MixLine routing.
+- Rewrote viewer, dashboard, player, overlay, status, empty-state, and common error copy in Cinder's voice.
+- Fixed the false-success-then-404 request loop caused by late YouTube callbacks after the probe player was destroyed.
+- Bound every probe callback to one captured token and one probe generation.
+- Added explicit cancellation through X, Escape, backdrop click, and the testing cancel button.
+- Removed automatic closing after success so the viewer controls when the verdict disappears.
+- Requires stable playback or cue state before accepting a probe.
+- Disables browser caching for HTML, JavaScript, and CSS so Git deployments do not leave stale front-end code behind.
 
 ## Validation
-
-Run static checks with:
 
 ```bash
 npm run check
