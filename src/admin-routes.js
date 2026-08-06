@@ -12,7 +12,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
 
   function adminOnly(req, res, next) {
     const token = req.get("x-admin-token") || req.body?.adminToken;
-    if (!isAdmin(token)) return res.status(401).json({ error: "Bad admin token." });
+    if (!isAdmin(token)) return res.status(401).json({ error: "That token does not open Cinder’s control room." });
     next();
   }
 
@@ -57,7 +57,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
 
   app.post("/api/admin/queue/:id/approve", adminOnly, (req, res) => {
     const item = store.state.queue.find((entry) => entry.id === req.params.id);
-    if (!item) return res.status(404).json({ error: "Queue item not found." });
+    if (!item) return res.status(404).json({ error: "That request slipped out of the queue before I could touch it." });
     item.status = "queued";
     item.approvedAt = new Date().toISOString();
     store.persist();
@@ -66,16 +66,16 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
 
   app.post("/api/admin/queue/:id/reject", adminOnly, (req, res) => {
     const index = store.state.queue.findIndex((entry) => entry.id === req.params.id);
-    if (index < 0) return res.status(404).json({ error: "Queue item not found." });
-    store.history(store.state.queue.splice(index, 1)[0], "rejected", req.body?.reason || "Rejected");
+    if (index < 0) return res.status(404).json({ error: "That request is already gone." });
+    store.history(store.state.queue.splice(index, 1)[0], "rejected", req.body?.reason || "Cinder denied entry");
     store.persist();
     res.json({ ok: true });
   });
 
   app.delete("/api/admin/queue/:id", adminOnly, (req, res) => {
     const index = store.state.queue.findIndex((entry) => entry.id === req.params.id);
-    if (index < 0) return res.status(404).json({ error: "Queue item not found." });
-    store.history(store.state.queue.splice(index, 1)[0], "removed", "Removed from queue");
+    if (index < 0) return res.status(404).json({ error: "That request already escaped the line." });
+    store.history(store.state.queue.splice(index, 1)[0], "removed", "Cinder threw it out of the queue");
     store.persist();
     res.json({ ok: true });
   });
@@ -87,7 +87,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
     const position = approvedIndexes.findIndex(
       (index) => store.state.queue[index].id === req.params.id
     );
-    if (position < 0) return res.status(404).json({ error: "Approved item not found." });
+    if (position < 0) return res.status(404).json({ error: "That song is not in the ready line anymore." });
     const target = req.body?.direction === "down" ? position + 1 : position - 1;
     if (target >= 0 && target < approvedIndexes.length) {
       const currentIndex = approvedIndexes[position];
@@ -101,7 +101,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
 
   app.post("/api/admin/player/next", adminOnly, (req, res) => {
     if (store.state.current) {
-      store.finishCurrent("skipped", req.body?.reason || "Skipped");
+      store.finishCurrent("skipped", req.body?.reason || "Cinder got bored and skipped it");
     }
     const current = store.nextTrack();
     store.persist();
@@ -113,9 +113,9 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
     const index = store.state.queue.findIndex(
       (item) => item.id === req.params.id && item.status === "queued"
     );
-    if (index < 0) return res.status(404).json({ error: "Approved item not found." });
+    if (index < 0) return res.status(404).json({ error: "That song is not waiting where I left it." });
     if (store.state.current) {
-      store.finishCurrent("skipped", "Replaced by selected request");
+      store.finishCurrent("skipped", "Cinder replaced it with a more tempting request");
     }
     store.state.current = store.state.queue.splice(index, 1)[0];
     store.state.current.status = "playing";
@@ -134,7 +134,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
   app.post("/api/admin/player/command", adminOnly, (req, res) => {
     const action = clean(req.body?.action, 20);
     if (!["play", "pause", "stop", "mute", "unmute", "volume"].includes(action)) {
-      return res.status(400).json({ error: "Unknown player command." });
+      return res.status(400).json({ error: "That player command is not one of Cinder’s tricks." });
     }
     const payload = {
       action,
@@ -150,7 +150,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
 
   app.post("/api/admin/player/halt", adminOnly, (req, res) => {
     if (store.state.current) {
-      store.finishCurrent("failed", req.body?.reason || "Player halted");
+      store.finishCurrent("failed", req.body?.reason || "Cinder restrained the player stage");
     }
     store.persist();
     io.to("player").emit("player:load", null);
@@ -160,10 +160,10 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
   app.post("/api/admin/player/ended", adminOnly, (req, res) => {
     const videoId = clean(req.body?.videoId, 20);
     if (store.state.current && videoId && videoId !== store.state.current.videoId) {
-      return res.status(409).json({ error: "Stale player event ignored." });
+      return res.status(409).json({ error: "That message came from an old song. I ignored it." });
     }
     const code = Number(req.body?.errorCode || 0);
-    const reason = clean(req.body?.reason, 160) || "Playback ended";
+    const reason = clean(req.body?.reason, 160) || "The song finished behaving";
     const failed = Boolean(code) || /^YouTube player error/i.test(reason);
     if (failed && store.state.current && config.permanentVideoErrors.has(code)) {
       store.markBad(store.state.current, code, reason);
@@ -179,7 +179,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
     try {
       const playlistId = youtube.extractPlaylistId(req.body?.input);
       if (!playlistId) {
-        return res.status(400).json({ error: "Paste a valid YouTube playlist URL or ID." });
+        return res.status(400).json({ error: "That is not a YouTube playlist I can get my hands around." });
       }
       const metadata = await youtube.youtubeGet("playlists", {
         part: "snippet,contentDetails,status",
@@ -187,7 +187,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
         maxResults: 1
       });
       const playlist = metadata.items?.[0];
-      if (!playlist) return res.status(404).json({ error: "Playlist not found." });
+      if (!playlist) return res.status(404).json({ error: "That playlist vanished or never wanted to be found." });
 
       let pageToken = "";
       let pages = 0;
@@ -253,7 +253,7 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
   app.delete("/api/admin/quarantine/:videoId", adminOnly, (req, res) => {
     const videoId = clean(req.params.videoId, 20);
     if (!store.state.badVideos[videoId]) {
-      return res.status(404).json({ error: "Blocked video not found." });
+      return res.status(404).json({ error: "That video is not on the no-touch list anymore." });
     }
     delete store.state.badVideos[videoId];
     store.persist(true);
