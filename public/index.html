@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CinderQuest Song Requests</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Oxanium:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="app-page viewer-page">
+  <div class="page-projector" aria-hidden="true"></div>
+
+  <main class="shell">
+    <header class="topbar hellglass-header">
+      <div class="brand">
+        <div class="sigel">CQ</div>
+        <div>
+          <h1 id="stream-name">Cinder's Request Pit</h1>
+          <p>Feed the queue. Behave just enough to stay invited.</p>
+        </div>
+      </div>
+      <div id="queue-state" class="pill">Checking the doors…</div>
+    </header>
+
+    <section class="card hero compact-hero">
+      <span class="eyebrow">Viewer song requests</span>
+      <h2>Give the queue something worth touching.</h2>
+      <p>Paste a YouTube link or search without leaving the request panel. Every selected video gets a real playback compatibility check before it earns a queue slot.</p>
+    </section>
+
+    <div class="grid" style="margin-top:18px">
+      <div class="stack">
+        <section id="request-card" class="card request-hub">
+          <div class="section-title">
+            <div>
+              <span class="eyebrow">Choose your method</span>
+              <h2>Request a song</h2>
+            </div>
+            <span id="duration-limit" class="pill"></span>
+          </div>
+
+          <div class="request-methods">
+            <form id="link-form" class="request-method">
+              <label for="request-input">Paste a YouTube video URL</label>
+              <div class="input-action-row">
+                <input id="request-input" autocomplete="off" placeholder="https://www.youtube.com/watch?v=..." required>
+                <button class="primary" type="submit">Use This Link</button>
+              </div>
+              <p class="small">Links are checked before the request details popup opens.</p>
+            </form>
+
+            <div id="search-divider" class="method-divider" hidden><span>or</span></div>
+
+            <form id="search-form" class="request-method" hidden>
+              <label for="search-input">Search YouTube</label>
+              <div class="input-action-row">
+                <input id="search-input" autocomplete="off" placeholder="Artist and song title">
+                <button class="secondary" type="submit">Search</button>
+              </div>
+              <p class="small">Results open in a HellGlass chooser instead of spilling down the page.</p>
+            </form>
+          </div>
+
+          <div id="request-status" class="status" aria-live="polite"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <h2>Up next</h2>
+            <span id="queue-count" class="pill">0 waiting</span>
+          </div>
+          <div id="queue-list" class="queue-list"></div>
+        </section>
+      </div>
+
+      <aside class="stack">
+        <section class="card">
+          <div class="section-title"><h2>Now playing</h2><span id="playback-state" class="pill"></span></div>
+          <div id="now-playing"></div>
+        </section>
+        <section class="card">
+          <h3 style="margin-top:0">House rules</h3>
+          <p class="muted">Requests may need approval. Duplicates, blocked channels, live streams, overlong videos, and videos that fail the playback probe are rejected automatically.</p>
+          <p class="small">The fallback playlist resumes whenever the viewer queue runs dry.</p>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <dialog id="request-dialog" class="hellglass-dialog">
+    <div class="dialog-frame">
+      <button id="dialog-close" class="dialog-close" type="button" aria-label="Close">×</button>
+
+      <section id="dialog-search" class="dialog-step" hidden>
+        <span class="eyebrow">YouTube search</span>
+        <div class="dialog-heading-row">
+          <h2>Choose your trouble</h2>
+          <span id="search-result-count" class="pill"></span>
+        </div>
+        <p id="search-notice" class="status"></p>
+        <div id="search-results" class="modal-results"></div>
+      </section>
+
+      <section id="dialog-details" class="dialog-step" hidden>
+        <span class="eyebrow">Request details</span>
+        <h2>Who is putting this in?</h2>
+        <article id="selected-video" class="selected-video"></article>
+        <form id="details-form" class="form-grid">
+          <label>Your display name
+            <input id="requester" autocomplete="nickname" maxlength="40" placeholder="Mysterious Gremlin" required>
+          </label>
+          <label>Optional note for the streamer
+            <input id="note" maxlength="160" placeholder="Keep it cute. Or at least useful.">
+          </label>
+          <div class="dialog-actions">
+            <button id="details-back" class="ghost" type="button">Back</button>
+            <button class="primary" type="submit">Add to Queue</button>
+          </div>
+          <div id="details-status" class="status" aria-live="polite"></div>
+        </form>
+      </section>
+
+      <section id="dialog-testing" class="dialog-step testing-step" hidden>
+        <span class="eyebrow">Playback compatibility test</span>
+        <h2>Making YouTube prove it works.</h2>
+        <p class="muted">The test player is muted. A successful cue or playback state earns the song its queue slot.</p>
+        <div class="probe-layout">
+          <div id="probe-player" class="probe-player"></div>
+          <div>
+            <div id="testing-video" class="testing-video"></div>
+            <div class="probe-meter"><span></span></div>
+            <p id="testing-status" class="status">Preparing the test player…</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="dialog-result" class="dialog-step result-step" hidden>
+        <div id="result-icon" class="result-icon">◆</div>
+        <span id="result-eyebrow" class="eyebrow">Request result</span>
+        <h2 id="result-title"></h2>
+        <p id="result-message" class="muted"></p>
+        <div class="dialog-actions centered">
+          <button id="result-primary" class="primary" type="button">Done</button>
+          <button id="result-secondary" class="ghost" type="button" hidden>Choose Another</button>
+        </div>
+      </section>
+    </div>
+  </dialog>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/request.js"></script>
+</body>
+</html>
