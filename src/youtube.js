@@ -1,9 +1,36 @@
-import { clean, extractVideoId, extractPlaylistId, formatDuration, parseDuration, requesterKey } from "./utils.js";
+import {
+  clean,
+  extractVideoId,
+  extractPlaylistId,
+  formatDuration,
+  parseDuration,
+  requesterKey
+} from "./utils.js";
 
-export function createYoutubeService({ config, store }) {
+function normalizedSearchQuery(value) {
+  return clean(value, 100).trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function quotaDay(timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function createYoutubeService({ config, store, database }) {
+  const inFlightSearches = new Map();
+
   async function youtubeGet(resource, params) {
     if (!config.youtubeApiKey) {
-      throw Object.assign(new Error("The YouTube API key is missing, so the hunt cannot leave the house."), { status: 503 });
+      throw Object.assign(
+        new Error("The YouTube API key is missing, so the hunt cannot leave the house."),
+        { status: 503 }
+      );
     }
     const url = new URL(`https://www.googleapis.com/youtube/v3/${resource}`);
     for (const [key, value] of Object.entries({ ...params, key: config.youtubeApiKey })) {
@@ -23,48 +50,149 @@ export function createYoutubeService({ config, store }) {
     return body;
   }
 
+  function mapVideo(video) {
+    const durationSec = parseDuration(video.contentDetails?.duration);
+    return {
+      videoId: video.id,
+      title: clean(video.snippet?.title, 180),
+      channelId: video.snippet?.channelId || "",
+      channelTitle: clean(video.snippet?.channelTitle, 120),
+      thumbnail: video.snippet?.thumbnails?.medium?.url
+        || video.snippet?.thumbnails?.default?.url
+        || "",
+      durationSec,
+      durationLabel: formatDuration(durationSec),
+      embeddable: video.status?.embeddable === true,
+      hasEmbedHtml: Boolean(video.player?.embedHtml),
+      privacyStatus: video.status?.privacyStatus || "unknown",
+      uploadStatus: video.status?.uploadStatus || "unknown",
+      ageRestricted: video.contentDetails?.contentRating?.ytRating === "ytAgeRestricted",
+      regionRestriction: video.contentDetails?.regionRestriction || null,
+      live: Boolean(video.liveStreamingDetails)
+        || video.snippet?.liveBroadcastContent === "live"
+    };
+  }
+
   async function fetchVideos(ids) {
-    const output = [];
     const unique = [...new Set(ids.filter(Boolean))];
-    for (let index = 0; index < unique.length; index += 50) {
+    if (!unique.length) return [];
+
+    const cached = await database.getVideos(unique);
+    const missing = unique.filter((id) => !cached.has(id));
+
+    for (let index = 0; index < missing.length; index += 50) {
+      const batch = missing.slice(index, index + 50);
       const body = await youtubeGet("videos", {
         part: "snippet,contentDetails,status,liveStreamingDetails,player",
-        id: unique.slice(index, index + 50).join(","),
-        maxWidth: 640,
-        maxHeight: 360
+        id: batch.join(","),
+        fields: "items(id,snippet(title,channelId,channelTitle,liveBroadcastContent,thumbnails),contentDetails(duration,contentRating,regionRestriction),status(embeddable,privacyStatus,uploadStatus),liveStreamingDetails,player/embedHtml)"
       });
-      for (const video of body.items || []) {
-        const durationSec = parseDuration(video.contentDetails?.duration);
-        output.push({
-          videoId: video.id,
-          title: clean(video.snippet?.title, 180),
-          channelId: video.snippet?.channelId || "",
-          channelTitle: clean(video.snippet?.channelTitle, 120),
-          thumbnail: video.snippet?.thumbnails?.medium?.url
-            || video.snippet?.thumbnails?.default?.url
-            || "",
-          durationSec,
-          durationLabel: formatDuration(durationSec),
-          embeddable: video.status?.embeddable === true,
-          hasEmbedHtml: Boolean(video.player?.embedHtml),
-          privacyStatus: video.status?.privacyStatus || "unknown",
-          uploadStatus: video.status?.uploadStatus || "unknown",
-          ageRestricted: video.contentDetails?.contentRating?.ytRating === "ytAgeRestricted",
-          regionRestriction: video.contentDetails?.regionRestriction || null,
-          live: Boolean(video.liveStreamingDetails)
-            || video.snippet?.liveBroadcastContent === "live"
-        });
+      const returned = new Map();
+      for (const rawVideo of body.items || []) {
+        const video = mapVideo(rawVideo);
+        returned.set(video.videoId, video);
+        cached.set(video.videoId, video);
       }
+
+      const cacheWrites = [...returned.values()];
+      for (const videoId of batch) {
+        if (!returned.has(videoId)) {
+          const missingVideo = { videoId, missing: true };
+          cached.set(videoId, missingVideo);
+          cacheWrites.push(missingVideo);
+        }
+      }
+      await database.setVideos(cacheWrites);
     }
-    return output;
+
+    return unique
+      .map((id) => cached.get(id))
+      .filter((video) => video && !video.missing);
   }
 
   async function fetchVideo(id) {
     const [video] = await fetchVideos([id]);
     if (!video) {
-      throw Object.assign(new Error("That video disappeared before I could get my hands on it."), { status: 404 });
+      throw Object.assign(
+        new Error("That video disappeared before I could get my hands on it."),
+        { status: 404 }
+      );
     }
     return video;
+  }
+
+  async function searchVideos(query) {
+    const normalizedQuery = normalizedSearchQuery(query);
+    const cacheKey = `${config.playbackRegion}:${normalizedQuery}`;
+
+    if (inFlightSearches.has(cacheKey)) {
+      return inFlightSearches.get(cacheKey);
+    }
+
+    const work = (async () => {
+      if (!database.isReady()) {
+        throw Object.assign(
+          new Error("Search is staying locked until PostgreSQL is connected. I am not wasting uncached YouTube calls."),
+          { status: 503 }
+        );
+      }
+
+      const cachedSearch = await database.getSearch(cacheKey);
+      let videoIds;
+      const cacheHit = Boolean(cachedSearch);
+      let callsUsed = null;
+
+      if (cachedSearch) {
+        videoIds = cachedSearch.videoIds;
+      } else {
+        const day = quotaDay(config.youtubeQuotaTimezone);
+        callsUsed = await database.reserveSearchCall(day);
+        if (callsUsed == null) {
+          throw Object.assign(
+            new Error("Cinder’s fresh-search allowance is spent for today. Cached hunts and direct links still work."),
+            { status: 429 }
+          );
+        }
+
+        const body = await youtubeGet("search", {
+          part: "snippet",
+          type: "video",
+          videoEmbeddable: "true",
+          videoSyndicated: "true",
+          regionCode: config.playbackRegion,
+          maxResults: config.youtubeSearchCandidates,
+          safeSearch: "moderate",
+          q: normalizedQuery,
+          fields: "items(id/videoId)"
+        });
+        videoIds = (body.items || [])
+          .map((item) => item.id?.videoId)
+          .filter(Boolean);
+
+        await database.setSearch({
+          cacheKey,
+          normalizedQuery,
+          regionCode: config.playbackRegion,
+          videoIds
+        });
+      }
+
+      const videos = await fetchVideos(videoIds);
+      return {
+        videoIds,
+        videos,
+        cacheHit,
+        callsUsed,
+        dailyBudget: config.youtubeSearchDailyBudget
+      };
+    })();
+
+    inFlightSearches.set(cacheKey, work);
+    try {
+      return await work;
+    } finally {
+      inFlightSearches.delete(cacheKey);
+    }
   }
 
   function allowedInRegion(video) {
@@ -166,6 +294,7 @@ export function createYoutubeService({ config, store }) {
     youtubeGet,
     fetchVideos,
     fetchVideo,
+    searchVideos,
     filterReason,
     contentRule,
     requestRule,
