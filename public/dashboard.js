@@ -24,6 +24,7 @@ const playlistFilterSummary = document.querySelector("#playlist-filter-summary")
 const settingsForm = document.querySelector("#settings-form");
 const settingsStatus = document.querySelector("#settings-status");
 const volume = document.querySelector("#volume");
+const playerConnection = document.querySelector("#player-connection");
 
 document.querySelector("#overlay-url").textContent = `${location.origin}/overlay`;
 tokenInput.value = token;
@@ -41,14 +42,24 @@ function getLines(id) {
     .filter(Boolean);
 }
 
+function humanReason(reason = "") {
+  return String(reason || "No reason given")
+    .replaceAll("viewer_probe", "viewer honesty test")
+    .replaceAll("player", "main player");
+}
+
 function render(state) {
   appState = state;
   renderNow(nowPlaying, state);
 
-  pendingCount.textContent = `${state.queue.filter((x) => x.status === "pending").length} pending`;
+  const pending = state.queue.filter((item) => item.status === "pending").length;
+  pendingCount.textContent = pending
+    ? `${pending} waiting for your judgment`
+    : "Nothing begging for approval";
+
   queueList.innerHTML = state.queue.length
     ? state.queue.map((item) => queueItemHtml(item, null, true)).join("")
-    : `<div class="empty">No requests waiting. Suspiciously well behaved.</div>`;
+    : `<div class="empty">Nobody is waiting. Either chat is behaving or they are plotting.</div>`;
 
   historyList.innerHTML = state.history.length
     ? state.history.slice(0, 100).map((item) => `
@@ -56,44 +67,48 @@ function render(state) {
         <img class="thumb" src="${escapeHtml(item.thumbnail)}" alt="">
         <div>
           <h3>${escapeHtml(item.title)}</h3>
-          <p>${escapeHtml(item.requester)} · ${escapeHtml(item.status)} · ${duration(item.durationSec)}</p>
+          <p>${escapeHtml(item.requester || "Cinder")} · ${escapeHtml(item.status)} · ${duration(item.durationSec)}</p>
         </div>
         <span class="pill">${escapeHtml(item.endReason || item.status)}</span>
       </article>
     `).join("")
-    : `<div class="empty">History is clean. It won't stay that way.</div>`;
+    : `<div class="empty">No history yet. The room is far too innocent.</div>`;
 
   const blockedVideos = Array.isArray(state.blockedVideos) ? state.blockedVideos : [];
-  blockedCount.textContent = `${blockedVideos.length} blocked`;
+  blockedCount.textContent = blockedVideos.length
+    ? `${blockedVideos.length} on the no-touch list`
+    : "Nothing blocked";
   blockedList.innerHTML = blockedVideos.length
     ? blockedVideos.map((item) => `
       <article class="queue-item" data-blocked-video-id="${escapeHtml(item.videoId)}">
         <div class="blocked-id-chip">${escapeHtml(item.videoId)}</div>
         <div>
-          <h3>${escapeHtml(item.title || "Unknown video")}</h3>
-          <p>${escapeHtml(item.reason || "Playback failure")} · error ${escapeHtml(item.errorCode || "?")}</p>
-          <p class="small">${escapeHtml(item.source || "player")} · failed ${escapeHtml(item.failureCount || 1)} time(s)</p>
+          <h3>${escapeHtml(item.title || "Mystery video")}</h3>
+          <p>${escapeHtml(item.reason || "It failed the player")} · YouTube error ${escapeHtml(item.errorCode || "?")}</p>
+          <p class="small">Caught by the ${escapeHtml(humanReason(item.source))} · failed ${escapeHtml(item.failureCount || 1)} time${Number(item.failureCount || 1) === 1 ? "" : "s"}</p>
         </div>
-        <button class="ghost" type="button" data-unblock-video="${escapeHtml(item.videoId)}">Unblock</button>
+        <button class="ghost" type="button" data-unblock-video="${escapeHtml(item.videoId)}">Forgive It</button>
       </article>`).join("")
-    : `<div class="empty">No blocked video IDs.</div>`;
+    : `<div class="empty">The no-touch list is empty. Enjoy the rare peace.</div>`;
 
-  playlistTitle.textContent = state.fallbackPlaylist.title || "No playlist loaded.";
-  playlistCount.textContent = `${state.fallbackPlaylist.items.length} tracks`;
+  playlistTitle.textContent = state.fallbackPlaylist.title || "No backup playlist is wearing the collar yet.";
+  playlistCount.textContent = state.fallbackPlaylist.items.length === 1
+    ? "1 usable track"
+    : `${state.fallbackPlaylist.items.length} usable tracks`;
 
   const importedAt = state.fallbackPlaylist.importedAt
     ? new Date(state.fallbackPlaylist.importedAt).toLocaleString()
     : "";
   playlistMeta.textContent = importedAt
-    ? `Saved on server · imported ${importedAt} · region ${state.fallbackPlaylist.importSummary?.playbackRegion || state.diagnostics?.playbackRegion || "US"}`
-    : "No saved playlist yet.";
+    ? `Saved safely · imported ${importedAt} · tested for ${state.fallbackPlaylist.importSummary?.playbackRegion || state.diagnostics?.playbackRegion || "US"}`
+    : "Nothing saved yet. The fallback is currently naked.";
 
   const summary = state.fallbackPlaylist.importSummary || {};
   const reasons = Object.entries(summary.skippedByReason || {})
     .map(([reason, count]) => `${reason.replaceAll("_", " ")}: ${count}`)
     .join(" · ");
   playlistFilterSummary.textContent = summary.total
-    ? `Checked ${summary.total}; kept ${summary.imported}; filtered ${summary.skipped}${reasons ? ` · ${reasons}` : ""}`
+    ? `I inspected ${summary.total}, kept ${summary.imported}, and threw out ${summary.skipped}${reasons ? ` · ${reasons}` : ""}`
     : "";
 
   if (document.activeElement !== playlistInput) {
@@ -101,6 +116,9 @@ function render(state) {
   }
 
   volume.value = state.settings.volume;
+  playerConnection.textContent = state.playback?.updatedAt
+    ? `Stage says: ${state.playback.status}`
+    : "Still feeling for the player…";
 
   for (const key of [
     "streamName", "queueOpen", "requireApproval", "allowDuplicates", "allowSearch",
@@ -124,14 +142,15 @@ async function authenticate(nextToken) {
   render(result.state);
 
   socket.emit("admin:register", token, (reply) => {
-    if (!reply?.ok) toast(reply?.error || "Socket authentication failed.", true);
+    if (!reply?.ok) toast(reply?.error || "The live dashboard connection refused the token.", true);
     else render(reply.state);
   });
 }
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  loginStatus.textContent = "Testing the lock…";
+  loginStatus.textContent = "Testing the lock. Hold still…";
+  loginStatus.className = "status";
   try {
     await authenticate(tokenInput.value);
     loginStatus.textContent = "";
@@ -153,6 +172,7 @@ queueList.addEventListener("click", async (event) => {
   try {
     if (action === "approve") {
       await api(`/api/admin/queue/${id}/approve`, { method: "POST", body: "{}" }, token);
+      toast("Fine. I let it in.");
     } else if (action === "up" || action === "down") {
       await api(`/api/admin/queue/${id}/move`, {
         method: "POST",
@@ -160,13 +180,16 @@ queueList.addEventListener("click", async (event) => {
       }, token);
     } else if (action === "play") {
       await api(`/api/admin/player/play/${id}`, { method: "POST", body: "{}" }, token);
+      toast("Taking that one now.");
     } else if (action === "reject") {
       await api(`/api/admin/queue/${id}/reject`, {
         method: "POST",
-        body: JSON.stringify({ reason: "Rejected by streamer" })
+        body: JSON.stringify({ reason: "Cinder denied entry" })
       }, token);
+      toast("Denied. It can sulk outside.");
     } else if (action === "remove") {
       await api(`/api/admin/queue/${id}`, { method: "DELETE" }, token);
+      toast("Thrown out of line.");
     }
   } catch (error) {
     toast(error.message, true);
@@ -179,8 +202,9 @@ document.querySelector("#skip-button").addEventListener("click", async () => {
   try {
     await api("/api/admin/player/next", {
       method: "POST",
-      body: JSON.stringify({ reason: "Skipped by streamer" })
+      body: JSON.stringify({ reason: "Cinder got bored and skipped it" })
     }, token);
+    toast("Gone. Next temptation.");
   } catch (error) {
     toast(error.message, true);
   }
@@ -216,7 +240,7 @@ volume.addEventListener("input", () => {
 
 playlistForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  playlistStatus.textContent = "Importing and checking every track…";
+  playlistStatus.textContent = "Inspecting every track before I let the playlist touch the stage…";
   playlistStatus.className = "status";
   try {
     const result = await api("/api/admin/playlist/import", {
@@ -226,7 +250,7 @@ playlistForm.addEventListener("submit", async (event) => {
     const reasons = Object.entries(result.skippedByReason || {})
       .map(([reason, count]) => `${reason.replaceAll("_", " ")}: ${count}`)
       .join(", ");
-    playlistStatus.textContent = `Saved ${result.imported} playable tracks; filtered ${result.skipped}${reasons ? ` (${reasons})` : ""}.`;
+    playlistStatus.textContent = `Kept ${result.imported} playable tracks and rejected ${result.skipped}${reasons ? ` (${reasons})` : ""}. The useful ones are saved.`;
     playlistStatus.className = "status good";
     playlistInput.value = "";
   } catch (error) {
@@ -238,7 +262,7 @@ playlistForm.addEventListener("submit", async (event) => {
 document.querySelector("#clear-quarantine").addEventListener("click", async () => {
   try {
     const result = await api("/api/admin/quarantine", { method: "DELETE" }, token);
-    playlistStatus.textContent = `Cleared ${result.cleared} quarantined video record(s). Re-import the playlist to test them again.`;
+    playlistStatus.textContent = `Forgave ${result.cleared} blocked video record${result.cleared === 1 ? "" : "s"}. Re-import the playlist if you want to tempt fate again.`;
     playlistStatus.className = "status good";
   } catch (error) {
     toast(error.message, true);
@@ -248,7 +272,8 @@ document.querySelector("#clear-quarantine").addEventListener("click", async () =
 document.querySelector("#clear-playlist").addEventListener("click", async () => {
   try {
     await api("/api/admin/playlist", { method: "DELETE" }, token);
-    playlistStatus.textContent = "Playlist cleared.";
+    playlistStatus.textContent = "The emergency mixtape is stripped clean.";
+    playlistStatus.className = "status good";
   } catch (error) {
     toast(error.message, true);
   }
@@ -260,7 +285,7 @@ blockedList.addEventListener("click", async (event) => {
   button.disabled = true;
   try {
     await api(`/api/admin/quarantine/${encodeURIComponent(button.dataset.unblockVideo)}`, { method: "DELETE" }, token);
-    toast("Video ID removed from the block list.");
+    toast("Fine. That video gets one more chance to behave.");
   } catch (error) {
     toast(error.message, true);
   } finally {
@@ -270,7 +295,8 @@ blockedList.addEventListener("click", async (event) => {
 
 settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  settingsStatus.textContent = "Saving…";
+  settingsStatus.textContent = "Tightening the rules…";
+  settingsStatus.className = "status";
   try {
     const settings = {
       streamName: document.querySelector("#streamName").value,
@@ -291,7 +317,7 @@ settingsForm.addEventListener("submit", async (event) => {
       method: "PATCH",
       body: JSON.stringify(settings)
     }, token);
-    settingsStatus.textContent = "Saved. The leash is adjusted.";
+    settingsStatus.textContent = "There. The leash fits better now.";
     settingsStatus.className = "status good";
   } catch (error) {
     settingsStatus.textContent = error.message;
@@ -302,6 +328,7 @@ settingsForm.addEventListener("submit", async (event) => {
 document.querySelector("#refresh-button").addEventListener("click", async () => {
   try {
     render(await api("/api/admin/state", {}, token));
+    toast("Everything is awake again.");
   } catch (error) {
     toast(error.message, true);
   }
