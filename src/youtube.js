@@ -3,7 +3,7 @@ import { clean, extractVideoId, extractPlaylistId, formatDuration, parseDuration
 export function createYoutubeService({ config, store }) {
   async function youtubeGet(resource, params) {
     if (!config.youtubeApiKey) {
-      throw Object.assign(new Error("YouTube API key is not configured."), { status: 503 });
+      throw Object.assign(new Error("The YouTube API key is missing, so the hunt cannot leave the house."), { status: 503 });
     }
     const url = new URL(`https://www.googleapis.com/youtube/v3/${resource}`);
     for (const [key, value] of Object.entries({ ...params, key: config.youtubeApiKey })) {
@@ -16,7 +16,7 @@ export function createYoutubeService({ config, store }) {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw Object.assign(
-        new Error(body?.error?.message || `YouTube API failed (${response.status}).`),
+        new Error(body?.error?.message || `YouTube came back with a ${response.status}. Very helpful.`),
         { status: response.status }
       );
     }
@@ -62,7 +62,7 @@ export function createYoutubeService({ config, store }) {
   async function fetchVideo(id) {
     const [video] = await fetchVideos([id]);
     if (!video) {
-      throw Object.assign(new Error("That YouTube video is unavailable."), { status: 404 });
+      throw Object.assign(new Error("That video disappeared before I could get my hands on it."), { status: 404 });
     }
     return video;
   }
@@ -94,52 +94,52 @@ export function createYoutubeService({ config, store }) {
   function contentRule(video) {
     const reason = filterReason(video);
     const messages = {
-      quarantined_after_player_error: "That video previously failed playback and is blocked.",
-      embedding_disabled: "That video cannot be played in an embedded YouTube player.",
-      no_embed_player: "That video cannot be played in an embedded YouTube player.",
-      not_public: "That video is not public or is unavailable.",
-      missing_or_removed: "That video is unavailable.",
-      not_processed: "That video is not fully processed.",
-      age_restricted: "Age-restricted videos are not accepted.",
-      live_stream: "Live streams are not accepted.",
-      duration_unavailable: "I could not verify that video's duration."
+      quarantined_after_player_error: "That video already betrayed the player once. Pick another.",
+      embedding_disabled: "The owner locked this one out of embedded players.",
+      no_embed_player: "YouTube did not give this video an embed player to work with.",
+      not_public: "That video is private, missing, or pretending not to know us.",
+      missing_or_removed: "That video is gone.",
+      not_processed: "YouTube has not finished preparing that video yet.",
+      age_restricted: "Age-restricted videos stay outside the request pit.",
+      live_stream: "Live streams are too slippery for this queue.",
+      duration_unavailable: "I cannot verify how long that video is, so it does not get in."
     };
     if (reason) {
       return reason.startsWith("blocked_in_")
-        ? `That video is blocked in ${config.playbackRegion}.`
+        ? `That video refuses to play in ${config.playbackRegion}.`
         : messages[reason];
     }
     if (video.durationSec > store.state.settings.maxDurationSec) {
-      return `That is too long. The limit is ${formatDuration(store.state.settings.maxDurationSec)}.`;
+      return `That one is too long for tonight. Keep it under ${formatDuration(store.state.settings.maxDurationSec)}.`;
     }
     const combined = `${video.title} ${video.channelTitle}`.toLowerCase();
     const keyword = store.state.settings.blockedKeywords.find((item) =>
       item && combined.includes(String(item).toLowerCase())
     );
-    if (keyword) return `Blocked by keyword: ${keyword}`;
+    if (keyword) return `That tripped the blocked word “${keyword}.” Not happening.`;
     const channel = store.state.settings.blockedChannels.find((item) =>
       item && [video.channelId, video.channelTitle.toLowerCase()]
         .includes(String(item).toLowerCase())
     );
-    if (channel) return "That channel is blocked.";
+    if (channel) return "That channel is on Cinder’s no-touch list.";
     if (!store.state.settings.allowDuplicates) {
       const duplicate = store.state.current?.videoId === video.videoId
         || store.state.queue.some((item) =>
           ["testing", "pending", "queued"].includes(item.status)
           && item.videoId === video.videoId
         );
-      if (duplicate) return "That song is already in the active queue.";
+      if (duplicate) return "That song is already waiting its turn. Greedy.";
     }
     return null;
   }
 
   function requestRule(video, requester, ip) {
     const state = store.state;
-    if (!state.settings.queueOpen) return "The request pit is closed.";
+    if (!state.settings.queueOpen) return "The request pit is closed. Cinder said no more hands in the jar.";
     const activeCount = state.queue.filter((item) =>
       ["testing", "pending", "queued"].includes(item.status)
     ).length;
-    if (activeCount >= state.settings.maxQueue) return "The queue is full.";
+    if (activeCount >= state.settings.maxQueue) return "The queue is stuffed. Let it breathe before adding more.";
     const contentError = contentRule(video);
     if (contentError) return contentError;
     const key = requesterKey(requester, ip);
@@ -147,7 +147,7 @@ export function createYoutubeService({ config, store }) {
       item.requesterKey === key && ["pending", "queued"].includes(item.status)
     ).length;
     if (userActive >= state.settings.maxActivePerUser) {
-      return `You already have ${state.settings.maxActivePerUser} active request(s).`;
+      return `You already have ${state.settings.maxActivePerUser} active request${state.settings.maxActivePerUser === 1 ? "" : "s"}. Let somebody else have a turn.`;
     }
     const latest = [...state.queue, ...state.history]
       .filter((item) => item.requesterKey === key && item.requestedAt)
@@ -155,7 +155,7 @@ export function createYoutubeService({ config, store }) {
     if (latest && state.settings.cooldownSec > 0) {
       const remaining = state.settings.cooldownSec
         - (Date.now() - new Date(latest.requestedAt)) / 1000;
-      if (remaining > 0) return `Cooldown active. Try again in ${Math.ceil(remaining)} seconds.`;
+      if (remaining > 0) return `Easy, eager thing. Try again in ${Math.ceil(remaining)} seconds.`;
     }
     return null;
   }
