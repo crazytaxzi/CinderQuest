@@ -10,8 +10,9 @@ export function loadConfig(rootDir) {
     playbackRegion: /^[A-Z]{2}$/.test(playbackRegion) ? playbackRegion : "US",
     trustProxy: String(process.env.TRUST_PROXY).toLowerCase() === "true",
     stateFile: path.join(rootDir, "data", "state.json"),
-    permanentVideoErrors: new Set([100, 101, 105, 150]),
-    probeBlockingErrors: new Set([5, 100, 101, 105, 150]),
+    permanentVideoErrors: new Set([100, 101, 150]),
+    probeBlockingErrors: new Set([5, 100, 101, 150]),
+    transientVideoErrors: new Set([105]),
     probeTtlMs: 120_000
   };
 }
