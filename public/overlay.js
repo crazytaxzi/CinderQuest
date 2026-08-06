@@ -15,11 +15,7 @@ const queueText = document.querySelector("#queue-text");
 const particleContainer = document.querySelector("#song-particles");
 
 class PingPongScroller {
-  constructor(viewport, content, {
-    speed = 15,
-    edgePauseMs = 1500,
-    startPauseMs = 1200
-  } = {}) {
+  constructor(viewport, content, { speed = 15, edgePauseMs = 1500, startPauseMs = 1200 } = {}) {
     this.viewport = viewport;
     this.content = content;
     this.speed = speed;
@@ -30,31 +26,20 @@ class PingPongScroller {
     this.max = 0;
     this.lastFrame = performance.now();
     this.pauseUntil = this.lastFrame + startPauseMs;
-    this.frame = 0;
-
     this.resizeObserver = new ResizeObserver(() => this.measure(true));
     this.resizeObserver.observe(viewport);
     this.resizeObserver.observe(content);
-
     this.measure(true);
     this.tick = this.tick.bind(this);
-    this.frame = requestAnimationFrame(this.tick);
+    requestAnimationFrame(this.tick);
   }
 
   measure(preserveDirection = false) {
     this.max = Math.max(0, this.content.scrollWidth - this.viewport.clientWidth);
     this.position = Math.min(this.position, this.max);
-
-    if (!preserveDirection || this.max === 0) {
-      this.direction = 1;
-    }
-
+    if (!preserveDirection || this.max === 0) this.direction = 1;
     this.content.classList.toggle("not-scrolling", this.max === 0);
-
-    if (this.max === 0) {
-      this.position = 0;
-    }
-
+    if (this.max === 0) this.position = 0;
     this.apply();
   }
 
@@ -72,10 +57,8 @@ class PingPongScroller {
   tick(now) {
     const deltaSeconds = Math.min(0.05, Math.max(0, (now - this.lastFrame) / 1000));
     this.lastFrame = now;
-
     if (this.max > 0 && now >= this.pauseUntil) {
       this.position += this.direction * this.speed * deltaSeconds;
-
       if (this.position >= this.max) {
         this.position = this.max;
         this.direction = -1;
@@ -85,11 +68,9 @@ class PingPongScroller {
         this.direction = 1;
         this.pauseUntil = now + this.edgePauseMs;
       }
-
       this.apply();
     }
-
-    this.frame = requestAnimationFrame(this.tick);
+    requestAnimationFrame(this.tick);
   }
 }
 
@@ -114,14 +95,13 @@ function setScrollingText(node, value, scroller) {
 
 function queueLine(items) {
   return items.slice(0, 12).map((item, index) => {
-    const requester = item.requester ? ` · ${item.requester}` : "";
+    const requester = item.requester ? ` · blame ${item.requester}` : "";
     return `${index + 1}. ${item.title}${requester}`;
   }).join("     ◆     ");
 }
 
 function buildParticles(count = 16) {
   particleContainer.innerHTML = "";
-
   for (let index = 0; index < count; index += 1) {
     const dust = document.createElement("span");
     dust.className = "dust";
@@ -141,9 +121,7 @@ function randomBetween(min, max) {
 function render(next) {
   state = { ...(state || {}), ...next };
   const item = state.current;
-
   songShell.classList.toggle("has-current", Boolean(item));
-
   if (!item) {
     card.classList.add("hidden");
     queue.classList.add("hidden");
@@ -152,17 +130,14 @@ function render(next) {
 
   thumb.src = item.thumbnail || "";
   thumb.alt = item.title ? `Artwork for ${item.title}` : "Current song artwork";
-
   source.textContent = item.source === "playlist"
-    ? "CINDER'S PLAYLIST"
-    : "VIEWER REQUEST";
-
+    ? "CINDER'S PRIVATE STASH"
+    : "YOUR BAD IDEA";
   setScrollingText(title, item.title, titleScroller);
 
   const requester = item.requester
-    ? `Requested by ${item.requester}`
-    : "Selected by Cinder";
-
+    ? `Blame ${item.requester}`
+    : "Cinder chose this trouble";
   sub.textContent = `${item.channelTitle}  ◆  ${requester}`;
 
   const upcoming = Array.isArray(state.queue) ? state.queue : [];
@@ -181,20 +156,16 @@ function render(next) {
 function updateProgress(playback) {
   if (!playback) return;
   state = { ...(state || {}), playback };
-
   const elapsed = Number(playback.progressSec || 0);
   const total = Number(playback.durationSec || state?.current?.durationSec || 0);
   const percent = total ? Math.min(100, (elapsed / total) * 100) : 0;
-
   progress.style.width = `${percent}%`;
   time.textContent = `${duration(elapsed)} / ${duration(total)}`;
 }
 
 buildParticles();
-
 socket.on("state:update", render);
 socket.on("playback:update", updateProgress);
-
 api("/api/public-state")
   .then(render)
   .catch(() => {
