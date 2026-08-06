@@ -1,4 +1,5 @@
 import "dotenv/config";
+import dns from "node:dns";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
@@ -12,6 +13,8 @@ import { createYoutubeService } from "./src/youtube.js";
 import { registerPublicRoutes } from "./src/public-routes.js";
 import { registerAdminRoutes } from "./src/admin-routes.js";
 import { registerSocketHandlers } from "./src/socket.js";
+
+dns.setDefaultResultOrder("ipv4first");
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const config = loadConfig(rootDir);
@@ -105,6 +108,7 @@ Control room: http://${displayHost}:${config.port}/dashboard
 Player stage: http://${displayHost}:${config.port}/player
 HellGlass overlay: http://${displayHost}:${config.port}/overlay
 Emergency mixtape: ${store.state.fallbackPlaylist.title || "nothing loaded"} (${store.state.fallbackPlaylist.items.length} usable tracks)
+Server-side DNS: IPv4 preferred
 `);
 });
 
