@@ -175,6 +175,64 @@ export function registerAdminRoutes({ app, io, config, store, youtube }) {
     res.json({ ok: true, current });
   });
 
+  app.post("/api/admin/quarantine/:videoId", adminOnly, async (req, res, next) => {
+    try {
+      const videoId = clean(req.params.videoId, 20);
+      if (!/^[\w-]{11}$/.test(videoId)) {
+        return res.status(400).json({ error: "That does not look like a valid YouTube video ID." });
+      }
+
+      const reason = clean(req.body?.reason, 180)
+        || "Cinder manually banned this video from the control room";
+      const currentMatch = store.state.current?.videoId === videoId
+        ? store.state.current
+        : null;
+      const queueMatches = store.state.queue.filter((item) => item.videoId === videoId);
+      const playlistMatch = store.state.fallbackPlaylist.items.find((item) => item.videoId === videoId);
+
+      let video = currentMatch || queueMatches[0] || playlistMatch;
+      if (!video) {
+        try {
+          video = await youtube.fetchVideo(videoId);
+        } catch {
+          video = {
+            videoId,
+            title: "Manually banned video",
+            channelTitle: "",
+            thumbnail: "",
+            durationSec: 0
+          };
+        }
+      }
+
+      for (const item of queueMatches) {
+        store.history(item, "blocked", reason);
+      }
+
+      if (currentMatch) {
+        store.finishCurrent("blocked", reason);
+      }
+
+      store.markBad(video, 0, reason, "manual");
+      const current = currentMatch ? store.nextTrack() : store.state.current;
+      store.persist(true);
+
+      if (currentMatch) {
+        io.to("player").emit("player:load", current);
+      }
+
+      res.json({
+        ok: true,
+        videoId,
+        removedQueueItems: queueMatches.length,
+        replacedCurrent: Boolean(currentMatch),
+        current
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/admin/playlist/import", adminOnly, async (req, res, next) => {
     try {
       const playlistId = youtube.extractPlaylistId(req.body?.input);
