@@ -19,7 +19,7 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
-if (!config.adminToken) console.warn("[WARNING] ADMIN_TOKEN is not configured.");
+if (!config.adminToken) console.warn("[Cinder is annoyed] ADMIN_TOKEN is not configured.");
 if (config.trustProxy) app.set("trust proxy", 1);
 
 app.use(helmet({
@@ -54,7 +54,12 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(rootDir, "public"), {
   extensions: ["html"],
   etag: true,
-  maxAge: "5m"
+  maxAge: 0,
+  setHeaders: (res, filePath) => {
+    if (/\.(?:html|js|css)$/i.test(filePath)) {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  }
 }));
 
 const requestLimiter = rateLimit({
@@ -62,14 +67,14 @@ const requestLimiter = rateLimit({
   limit: 12,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  message: { error: "Easy there, greedy fingers. Try again in a minute." }
+  message: { error: "Easy, eager fingers. Give it a minute before touching the queue again." }
 });
 const searchLimiter = rateLimit({
   windowMs: 60_000,
   limit: 8,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  message: { error: "Search is cooling down. Paste a YouTube link instead." }
+  message: { error: "The YouTube hunt needs a breather. Slip me a direct link for now." }
 });
 
 const store = createStore({ io, config });
@@ -83,7 +88,7 @@ app.use((error, _req, res, _next) => {
   const status = Number(error.status || 500);
   res.status(status >= 400 && status < 600 ? status : 500).json({
     error: status >= 500
-      ? "Something jammed in the machinery. Check the server console."
+      ? "Something jammed in Cinder’s machinery. The server console knows who did it."
       : error.message
   });
 });
@@ -93,18 +98,18 @@ httpServer.listen(config.port, config.host, () => {
     ? "127.0.0.1"
     : config.host;
   console.log(`
-CinderQuest
+CinderQuest is awake.
 Listening: ${config.host}:${config.port}
-Viewer: http://${displayHost}:${config.port}/
-Dashboard: http://${displayHost}:${config.port}/dashboard
-Player: http://${displayHost}:${config.port}/player
-Overlay: http://${displayHost}:${config.port}/overlay
-Saved playlist: ${store.state.fallbackPlaylist.title || "none"} (${store.state.fallbackPlaylist.items.length} usable tracks)
+Viewer pit: http://${displayHost}:${config.port}/
+Control room: http://${displayHost}:${config.port}/dashboard
+Player stage: http://${displayHost}:${config.port}/player
+HellGlass overlay: http://${displayHost}:${config.port}/overlay
+Emergency mixtape: ${store.state.fallbackPlaylist.title || "nothing loaded"} (${store.state.fallbackPlaylist.items.length} usable tracks)
 `);
 });
 
 function shutdown(signal) {
-  console.log(`${signal}: saving state`);
+  console.log(`${signal}: Cinder is saving everything before the lights go out.`);
   try {
     store.saveNow();
   } catch (error) {
