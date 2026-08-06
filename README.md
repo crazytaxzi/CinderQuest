@@ -89,16 +89,23 @@ Use `/overlay` as a Browser Source. A practical starting size is `1000 × 240`. 
 
 Keep the Player Stage visible somewhere on stream. Capture its audio through OBS Application Audio Capture, VoiceMeeter, MixLine, or the rest of your preferred audio ritual.
 
+## Version 0.2.3
+
+- Restores error `105` as a permanent automatic ban in both the viewer probe and main player.
+- Removes the automatic retry path for error `105`.
+- Keeps every auto-banned `105` video in the no-touch list across restarts.
+- Removes the startup cleanup that released old `105` bans.
+- A blocked video remains blocked until the streamer explicitly uses **Forgive It** or clears the no-touch list.
+- Keeps the IPv4 preference, manual ban buttons, scrollable dashboard lists, sticky control cards, and clipped overlay ambience from 0.2.2.
+
 ## Version 0.2.2
 
-- Treats undocumented YouTube error `105` as transient rather than permanently banning the video.
-- Retries error `105` once in both the viewer probe and main player.
-- Automatically releases old auto-blocked `105` records on startup.
-- Prefers IPv4 for server-side YouTube API DNS resolution.
-- Adds manual **Ban This Video** controls for the current track and queued requests.
-- Makes history and blocked-video lists independently scrollable.
-- Keeps the emergency playlist, settings, and OBS cards compact in a sticky dashboard sidebar.
-- Clips overlay haze and particles to the current-song card.
+- Treated undocumented YouTube error `105` as transient rather than permanently banning the video. This behavior was reverted in 0.2.3.
+- Added IPv4 preference for server-side YouTube API DNS resolution.
+- Added manual **Ban This Video** controls for the current track and queued requests.
+- Made history and blocked-video lists independently scrollable.
+- Kept the emergency playlist, settings, and OBS cards compact in a sticky dashboard sidebar.
+- Clipped overlay haze and particles to the current-song card.
 
 ## Version 0.2.1
 

@@ -10,9 +10,6 @@ let endedLock = false;
 let desiredVolume = 70;
 let consecutivePlaybackErrors = 0;
 let haltingAfterErrors = false;
-let transientRetryItemId = "";
-let transientRetryCount = 0;
-let transientRetryTimer = null;
 
 const setup = document.querySelector("#setup");
 const setupForm = document.querySelector("#setup-form");
@@ -77,12 +74,6 @@ function updateNow() {
 }
 
 function loadTrack(item) {
-  clearTimeout(transientRetryTimer);
-  if (item?.id !== transientRetryItemId) {
-    transientRetryItemId = item?.id || "";
-    transientRetryCount = 0;
-  }
-
   current = item;
   endedLock = false;
   updateNow();
@@ -137,39 +128,6 @@ function handleStateChange(event) {
 
 async function handlePlayerError(event) {
   const code = Number(event.data);
-
-  if (code === 105 && current?.videoId && transientRetryCount < 1) {
-    transientRetryCount += 1;
-    const retryItemId = current.id;
-    const retryVideoId = current.videoId;
-
-    socket.emit("player:error", {
-      code: String(code),
-      videoId: retryVideoId,
-      transient: true,
-      retrying: true
-    });
-
-    now.innerHTML = `
-      <strong>YouTube threw undocumented error 105.</strong>
-      <div class="small">I am giving this song one clean retry before I throw it aside. I am not banning it for a mystery error.</div>
-    `;
-
-    transientRetryTimer = setTimeout(() => {
-      if (!playerReady || current?.id !== retryItemId) return;
-      endedLock = false;
-      try {
-        player.cueVideoById(retryVideoId);
-        setTimeout(() => {
-          if (playerReady && current?.id === retryItemId) player.playVideo();
-        }, 350);
-      } catch {
-        // Let the next player error or timeout decide what happens.
-      }
-    }, 1400);
-    return;
-  }
-
   consecutivePlaybackErrors += 1;
 
   if (code === 153) {
@@ -195,9 +153,7 @@ async function handlePlayerError(event) {
 
   socket.emit("player:error", {
     code: String(code),
-    videoId: current?.videoId || "",
-    transient: code === 105,
-    retrying: false
+    videoId: current?.videoId || ""
   });
 
   if (consecutivePlaybackErrors >= 5 && !haltingAfterErrors) {
@@ -229,9 +185,7 @@ async function handlePlayerError(event) {
         body: JSON.stringify({
           videoId: current?.videoId || "",
           errorCode: code,
-          reason: code === 105
-            ? "Undocumented YouTube player error 105 after one retry"
-            : `YouTube player error ${code}`
+          reason: `YouTube player error ${code}`
         })
       }, token).catch(() => {});
     }, 900);
