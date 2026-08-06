@@ -1,7 +1,15 @@
 import crypto from "node:crypto";
 import { clean, normalizeRequester, playerErrorMessage, requesterKey } from "./utils.js";
 
-export function registerPublicRoutes({ app, config, store, youtube, requestLimiter, searchLimiter }) {
+export function registerPublicRoutes({
+  app,
+  config,
+  store,
+  youtube,
+  database,
+  requestLimiter,
+  searchLimiter
+}) {
   const probes = new Map();
 
   setInterval(() => {
@@ -42,6 +50,9 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
     ok: true,
     app: "CinderQuest",
     youtubeApiConfigured: Boolean(config.youtubeApiKey),
+    postgresCacheReady: database.isReady(),
+    cacheRetentionDays: config.youtubeCacheTtlDays,
+    searchDailyBudget: config.youtubeSearchDailyBudget,
     time: new Date().toISOString()
   }));
 
@@ -56,26 +67,31 @@ export function registerPublicRoutes({ app, config, store, youtube, requestLimit
       if (query.length < 2) {
         return res.status(400).json({ error: "Give me at least two characters to hunt with." });
       }
-      const body = await youtube.youtubeGet("search", {
-        part: "snippet",
-        type: "video",
-        videoEmbeddable: "true",
-        maxResults: 10,
-        safeSearch: "moderate",
-        q: query
-      });
-      const ids = (body.items || []).map((item) => item.id?.videoId).filter(Boolean);
-      const videos = await youtube.fetchVideos(ids);
-      const byId = new Map(videos.map((video) => [video.videoId, video]));
+
+      const result = await youtube.searchVideos(query);
+      const byId = new Map(result.videos.map((video) => [video.videoId, video]));
       const items = [];
       let excludedCount = 0;
-      for (const id of ids) {
+
+      for (const id of result.videoIds) {
         const video = byId.get(id);
-        if (!video || youtube.contentRule(video)) excludedCount += 1;
-        else items.push(video);
-        if (items.length >= 8) break;
+        if (!video || youtube.contentRule(video)) {
+          excludedCount += 1;
+          continue;
+        }
+        if (items.length < config.youtubeSearchDisplayLimit) {
+          items.push(video);
+        }
       }
-      res.json({ items, excludedCount });
+
+      res.json({
+        items,
+        excludedCount,
+        cacheHit: result.cacheHit,
+        candidatesChecked: result.videoIds.length,
+        freshSearchCallsUsedToday: result.callsUsed,
+        freshSearchDailyBudget: result.dailyBudget
+      });
     } catch (error) {
       next(error);
     }
