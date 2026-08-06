@@ -29,28 +29,35 @@ export async function api(url, options = {}, token = "") {
 
   const response = await fetch(url, { ...options, headers });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(body.error || `The request came back with a ${response.status}. Rude.`);
+    error.status = response.status;
+    error.body = body;
+    throw error;
+  }
   return body;
 }
 
 export function renderNow(container, state) {
   const item = state.current;
   if (!item) {
-    container.innerHTML = `<div class="empty">Nothing playing. The pit is waiting.</div>`;
+    container.innerHTML = `<div class="empty">The stage is hungry. Feed it something.</div>`;
     return;
   }
   const progress = state.playback?.durationSec
     ? Math.min(100, (state.playback.progressSec / state.playback.durationSec) * 100)
     : 0;
+  const source = item.source === "playlist" ? "Cinder's emergency stash" : "Viewer temptation";
+  const requester = item.requester || "Cinder";
 
   container.innerHTML = `
     <div class="now-playing">
       <img class="thumb" src="${escapeHtml(item.thumbnail)}" alt="">
       <div class="now-copy">
-        <span class="pill live">${escapeHtml(item.source === "playlist" ? "Playlist" : "Requested")}</span>
+        <span class="pill live">${escapeHtml(source)}</span>
         <h3>${escapeHtml(item.title)}</h3>
         <p>${escapeHtml(item.channelTitle)} · ${duration(item.durationSec)}</p>
-        <p class="small">Fed to the queue by ${escapeHtml(item.requester)}</p>
+        <p class="small">Blame ${escapeHtml(requester)} for this one.</p>
       </div>
     </div>
     <div class="progress"><span style="width:${progress}%"></span></div>
@@ -58,23 +65,34 @@ export function renderNow(container, state) {
 }
 
 export function queueItemHtml(item, position = null, controls = false) {
+  const statusLabels = {
+    pending: "waiting for Cinder's judgment",
+    queued: "ready to misbehave",
+    testing: "being interrogated",
+    played: "served its purpose",
+    failed: "betrayed us",
+    removed: "thrown out",
+    rejected: "denied entry"
+  };
+  const status = statusLabels[item.status] || item.status;
+
   return `
     <article class="queue-item" data-id="${escapeHtml(item.id)}">
       <img class="thumb" src="${escapeHtml(item.thumbnail)}" alt="">
       <div>
         <h3>${position ? `${position}. ` : ""}${escapeHtml(item.title)}</h3>
         <p>${escapeHtml(item.channelTitle)} · ${duration(item.durationSec)}</p>
-        <p class="small">${escapeHtml(item.requester)} · ${escapeHtml(item.status)}</p>
+        <p class="small">${escapeHtml(item.requester)} · ${escapeHtml(status)}</p>
       </div>
       ${controls ? `
         <div class="queue-actions">
-          ${item.status === "pending" ? `<button class="primary" data-action="approve">Approve</button>` : ""}
+          ${item.status === "pending" ? `<button class="primary" data-action="approve">Let It In</button>` : ""}
           ${item.status === "queued" ? `
-            <button class="ghost" data-action="up" title="Move up">↑</button>
-            <button class="ghost" data-action="down" title="Move down">↓</button>
-            <button class="secondary" data-action="play">Play</button>` : ""}
+            <button class="ghost" data-action="up" title="Push it closer">↑</button>
+            <button class="ghost" data-action="down" title="Make it wait">↓</button>
+            <button class="secondary" data-action="play">Take It Now</button>` : ""}
           <button class="danger" data-action="${item.status === "pending" ? "reject" : "remove"}">
-            ${item.status === "pending" ? "Reject" : "Remove"}
+            ${item.status === "pending" ? "Deny It" : "Throw It Out"}
           </button>
         </div>` : ""}
     </article>
