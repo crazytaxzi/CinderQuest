@@ -40,7 +40,7 @@
 
     <div id="dashboard" hidden>
       <div class="dashboard-grid">
-        <div class="stack">
+        <div class="stack dashboard-main-stack">
           <section class="card">
             <div class="section-title"><h2>Making noise right now</h2><span id="player-connection" class="pill">Feeling for the player…</span></div>
             <div id="now-playing"></div>
@@ -48,6 +48,7 @@
               <button class="primary" data-command="play">Let It Play</button>
               <button class="ghost" data-command="pause">Hold It</button>
               <button class="danger" id="skip-button">Throw It Out / Next</button>
+              <button class="warning" id="ban-current-button" disabled>Ban This Video</button>
               <button class="ghost" data-command="mute">Silence It</button>
               <button class="ghost" data-command="unmute">Let It Speak</button>
             </div>
@@ -67,18 +68,18 @@
             <div id="queue-list" class="queue-list"></div>
           </section>
 
-          <section class="card">
+          <section class="card dashboard-scroll-card">
             <div class="section-title"><h2>Recent victims</h2><span class="pill">Last 100</span></div>
-            <div id="history-list" class="history-list"></div>
+            <div id="history-list" class="history-list dashboard-scroll-list"></div>
           </section>
 
-          <section class="card">
+          <section class="card dashboard-scroll-card">
             <div class="section-title"><h2>Videos that betrayed us</h2><span id="blocked-count" class="pill">Nothing blocked</span></div>
-            <div id="blocked-list" class="history-list"></div>
+            <div id="blocked-list" class="history-list dashboard-scroll-list"></div>
           </section>
         </div>
 
-        <aside class="stack">
+        <aside class="stack dashboard-sidebar">
           <section class="card">
             <div class="section-title"><h2>Emergency mixtape</h2><span id="playlist-count" class="pill"></span></div>
             <p id="playlist-title" class="muted">No backup playlist is wearing the collar yet.</p>
