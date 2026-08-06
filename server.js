@@ -8,6 +8,7 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { Server } from "socket.io";
 import { loadConfig } from "./src/config.js";
+import { createDatabase } from "./src/db.js";
 import { createStore } from "./src/store.js";
 import { createYoutubeService } from "./src/youtube.js";
 import { registerPublicRoutes } from "./src/public-routes.js";
@@ -80,9 +81,20 @@ const searchLimiter = rateLimit({
   message: { error: "The YouTube hunt needs a breather. Slip me a direct link for now." }
 });
 
+const database = createDatabase({ config });
+const databaseReady = await database.init();
 const store = createStore({ io, config });
-const youtube = createYoutubeService({ config, store });
-registerPublicRoutes({ app, config, store, youtube, requestLimiter, searchLimiter });
+const youtube = createYoutubeService({ config, store, database });
+
+registerPublicRoutes({
+  app,
+  config,
+  store,
+  youtube,
+  database,
+  requestLimiter,
+  searchLimiter
+});
 const { isAdmin } = registerAdminRoutes({ app, io, config, store, youtube });
 registerSocketHandlers({ io, store, isAdmin });
 
@@ -109,18 +121,21 @@ Player stage: http://${displayHost}:${config.port}/player
 HellGlass overlay: http://${displayHost}:${config.port}/overlay
 Emergency mixtape: ${store.state.fallbackPlaylist.title || "nothing loaded"} (${store.state.fallbackPlaylist.items.length} usable tracks)
 Server-side DNS: IPv4 preferred
+PostgreSQL YouTube cache: ${databaseReady ? `ready · ${config.youtubeCacheTtlDays}-day retention` : "not ready · search protected from uncached calls"}
+Fresh-search budget: ${config.youtubeSearchDailyBudget} per Pacific day
 `);
 });
 
-function shutdown(signal) {
+async function shutdown(signal) {
   console.log(`${signal}: Cinder is saving everything before the lights go out.`);
   try {
     store.saveNow();
+    await database.close();
   } catch (error) {
     console.error(error);
   }
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 5000).unref();
 }
-process.once("SIGINT", () => shutdown("SIGINT"));
-process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => void shutdown("SIGINT"));
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
