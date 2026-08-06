@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cinder Player Stage</title>
+  <title>CinderQuest · Player Stage</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Oxanium:wght@500;600;700&display=swap" rel="stylesheet">
@@ -12,12 +12,12 @@
 <body class="app-page player-page">
   <div class="page-projector" aria-hidden="true"></div>
   <section id="setup" class="card setup-screen">
-    <span class="eyebrow">Visible YouTube player</span>
-    <h1>Prime the player stage.</h1>
-    <p class="muted">Enter the admin token, then click once to unlock browser playback. Keep this player visible; do not bury YouTube behind an overlay.</p>
+    <span class="eyebrow">The real YouTube stage</span>
+    <h1>Wake it up and give it one honest click.</h1>
+    <p class="muted">Feed me the admin token, then unlock browser playback. Keep this player visible somewhere on stream; YouTube gets touchy when it thinks we are hiding things.</p>
     <form id="setup-form" class="form-grid">
-      <label>Admin token<input id="player-token" type="password" required></label>
-      <button class="primary">Unlock and Start</button>
+      <label>The player’s secret token<input id="player-token" type="password" required></label>
+      <button class="primary">Wake the Stage</button>
       <div id="setup-status" class="status"></div>
     </form>
   </section>
@@ -28,13 +28,13 @@
     </section>
     <footer class="card player-footer">
       <div id="player-now">
-        <strong>Waiting for a track.</strong>
-        <div class="small">Use the dashboard or let the fallback playlist take over.</div>
+        <strong>The stage is hungry.</strong>
+        <div class="small">The queue or Cinder’s emergency mixtape will feed it soon enough.</div>
       </div>
       <div class="controls">
-        <button id="local-play" class="primary">Play</button>
-        <button id="local-pause" class="ghost">Pause</button>
-        <button id="local-next" class="danger">Next</button>
+        <button id="local-play" class="primary">Make Noise</button>
+        <button id="local-pause" class="ghost">Hold It</button>
+        <button id="local-next" class="danger">Next Temptation</button>
       </div>
     </footer>
   </main>
