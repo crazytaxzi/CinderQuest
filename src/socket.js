@@ -31,10 +31,16 @@ export function registerSocketHandlers({ io, store, isAdmin }) {
 
     socket.on("player:error", (payload = {}) => {
       if (!socket.rooms.has("player")) return;
-      console.error("YouTube player error:", payload.code, payload.videoId);
+      console.error("YouTube player error:", payload.code, payload.videoId, payload);
+
+      const transient105 = String(payload.code) === "105" && payload.transient;
       io.to("admin").emit("admin:alert", {
-        type: "error",
-        message: `YouTube threw error ${payload.code} at ${payload.videoId || "a mystery video"}. I’m handling the little betrayal.`
+        type: transient105 ? "warning" : "error",
+        message: transient105
+          ? (payload.retrying
+              ? `YouTube coughed up mystery error 105 for ${payload.videoId || "a video"}. I’m retrying once and not banning it.`
+              : `Error 105 survived its retry for ${payload.videoId || "a video"}. I skipped it without adding it to the no-touch list.`)
+          : `YouTube threw error ${payload.code} at ${payload.videoId || "a mystery video"}. I’m handling the little betrayal.`
       });
     });
   });
