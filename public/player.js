@@ -54,7 +54,7 @@ function createPlayer() {
       onStateChange: handleStateChange,
       onError: handlePlayerError,
       onAutoplayBlocked: () => {
-        setupStatus.textContent = "Autoplay was blocked. Click Play once in the player.";
+        setupStatus.textContent = "The browser got shy about autoplay. Give Play one click and it should loosen up.";
         setupStatus.className = "status bad";
       }
     }
@@ -63,12 +63,13 @@ function createPlayer() {
 
 function updateNow() {
   if (!current) {
-    now.innerHTML = `<strong>Waiting for a track.</strong><div class="small">Queue or fallback playlist will feed the stage.</div>`;
+    now.innerHTML = `<strong>The stage is hungry.</strong><div class="small">The queue or Cinder’s emergency mixtape will feed it.</div>`;
     return;
   }
+  const requester = current.requester || "Cinder";
   now.innerHTML = `
     <strong>${escapeHtml(current.title)}</strong>
-    <div class="small">${escapeHtml(current.channelTitle)} · ${duration(current.durationSec)} · requested by ${escapeHtml(current.requester)}</div>
+    <div class="small">${escapeHtml(current.channelTitle)} · ${duration(current.durationSec)} · blame ${escapeHtml(requester)}</div>
   `;
 }
 
@@ -89,16 +90,16 @@ function loadTrack(item) {
 }
 
 function statusName(code) {
-  if (!window.YT) return "loading";
+  if (!window.YT) return "waking up";
   const map = {
-    [YT.PlayerState.UNSTARTED]: "unstarted",
-    [YT.PlayerState.ENDED]: "ended",
-    [YT.PlayerState.PLAYING]: "playing",
-    [YT.PlayerState.PAUSED]: "paused",
-    [YT.PlayerState.BUFFERING]: "buffering",
-    [YT.PlayerState.CUED]: "cued"
+    [YT.PlayerState.UNSTARTED]: "getting dressed",
+    [YT.PlayerState.ENDED]: "finished",
+    [YT.PlayerState.PLAYING]: "making noise",
+    [YT.PlayerState.PAUSED]: "holding its breath",
+    [YT.PlayerState.BUFFERING]: "YouTube is thinking",
+    [YT.PlayerState.CUED]: "ready to bite"
   };
-  return map[code] || "unknown";
+  return map[code] || "doing something suspicious";
 }
 
 function handleStateChange(event) {
@@ -116,7 +117,7 @@ function handleStateChange(event) {
       method: "POST",
       body: JSON.stringify({
         videoId: current?.videoId || "",
-        reason: "YouTube playback ended"
+        reason: "The song finished behaving"
       })
     }, token).catch((error) => {
       setupStatus.textContent = error.message;
@@ -133,19 +134,19 @@ async function handlePlayerError(event) {
     endedLock = true;
     haltingAfterErrors = true;
     now.innerHTML = `
-      <strong>YouTube rejected the player identity (error 153).</strong>
-      <div class="small">This is an origin/referrer configuration problem, not a bad song. Playback has been halted instead of chewing through the playlist.</div>
+      <strong>YouTube rejected the player’s identity. Error 153.</strong>
+      <div class="small">That is our origin or referrer setup being bratty, not the song. I stopped the stage instead of chewing through the whole queue.</div>
     `;
 
     try {
       await api("/api/admin/player/halt", {
         method: "POST",
         body: JSON.stringify({
-          reason: "YouTube player error 153: missing referrer or client identity"
+          reason: "YouTube error 153: the player identity or referrer was rejected"
         })
       }, token);
     } catch {
-      // Already halted locally.
+      // The stage is already restrained locally.
     }
     return;
   }
@@ -159,19 +160,19 @@ async function handlePlayerError(event) {
     haltingAfterErrors = true;
     endedLock = true;
     now.innerHTML = `
-      <strong>Playback halted after ${consecutivePlaybackErrors} consecutive YouTube errors.</strong>
-      <div class="small">Use http://127.0.0.1:${location.port || "3417"}/player, close duplicate Player tabs, then press Next from the dashboard.</div>
+      <strong>I stopped after ${consecutivePlaybackErrors} YouTube failures in a row.</strong>
+      <div class="small">Close duplicate Player tabs, make sure this page uses the correct public URL, then press Next from the control room.</div>
     `;
 
     try {
       await api("/api/admin/player/halt", {
         method: "POST",
         body: JSON.stringify({
-          reason: `Halted after ${consecutivePlaybackErrors} consecutive YouTube player errors; last code ${code}`
+          reason: `Cinder halted the stage after ${consecutivePlaybackErrors} consecutive YouTube errors; last code ${code}`
         })
       }, token);
     } catch {
-      // Avoid another cascading failure while already handling playback errors.
+      // Do not create another failure while handling a failure pileup.
     }
     return;
   }
@@ -236,7 +237,7 @@ async function register(nextToken) {
     if (!reply?.ok) {
       setup.hidden = false;
       shell.hidden = true;
-      setupStatus.textContent = reply?.error || "Player socket authentication failed.";
+      setupStatus.textContent = reply?.error || "The live player connection refused the token.";
       setupStatus.className = "status bad";
       return;
     }
@@ -247,14 +248,15 @@ async function register(nextToken) {
   if (!current) {
     await api("/api/admin/player/next", {
       method: "POST",
-      body: JSON.stringify({ reason: "Player stage started" })
+      body: JSON.stringify({ reason: "The player stage woke up hungry" })
     }, token);
   }
 }
 
 setupForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  setupStatus.textContent = "Unlocking…";
+  setupStatus.textContent = "Turning the key and waking YouTube…";
+  setupStatus.className = "status";
   try {
     await register(tokenInput.value);
   } catch (error) {
@@ -275,7 +277,7 @@ document.querySelector("#local-pause").addEventListener("click", () => playerRea
 document.querySelector("#local-next").addEventListener("click", () => {
   api("/api/admin/player/next", {
     method: "POST",
-    body: JSON.stringify({ reason: "Skipped from player stage" })
+    body: JSON.stringify({ reason: "Cinder skipped it from the player stage" })
   }, token).catch((error) => {
     setupStatus.textContent = error.message;
     setupStatus.className = "status bad";
