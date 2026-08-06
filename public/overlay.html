@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cinder HellGlass Song Overlay</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Oxanium:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="overlay-body">
+  <main id="song-shell" class="song-shell">
+    <div id="song-ambient" class="song-ambient" aria-hidden="true">
+      <div class="projector-base"></div>
+      <div class="projector-beam"></div>
+      <div id="song-particles"></div>
+    </div>
+
+    <div class="song-overlay-stack">
+      <section id="overlay-card" class="hellglass-card now-playing-card hidden" aria-live="polite">
+        <div class="album-frame">
+          <img id="overlay-thumb" class="overlay-thumb" alt="">
+        </div>
+
+        <div class="song-content">
+          <div class="song-topline">
+            <span id="overlay-source" class="source-chip">NOW PLAYING</span>
+            <span id="overlay-time" class="overlay-time">0:00 / 0:00</span>
+          </div>
+
+          <div id="title-viewport" class="marquee-viewport title-viewport">
+            <h1 id="overlay-title" class="overlay-title marquee-content"></h1>
+          </div>
+
+          <div id="overlay-sub" class="overlay-sub"></div>
+
+          <div class="song-progress" aria-hidden="true">
+            <span id="overlay-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <section id="overlay-queue" class="hellglass-card queue-card hidden">
+        <span class="queue-label">UP NEXT</span>
+        <div id="queue-viewport" class="marquee-viewport queue-viewport">
+          <div id="queue-text" class="queue-text marquee-content"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/overlay.js"></script>
+</body>
+</html>
