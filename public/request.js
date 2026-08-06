@@ -239,7 +239,7 @@ function playerErrorMessage(code) {
     5: "YouTube's HTML5 player could not handle this one.",
     100: "This video vanished, went private, or never existed in the first place.",
     101: "The owner locked this video out of embedded players.",
-    105: "YouTube rejected this video during the compatibility test.",
+    105: "YouTube returned its undocumented error 105 twice. I am treating it as temporary trouble, not a permanent ban.",
     150: "The owner locked this video out of embedded players.",
     153: "YouTube could not verify this site's player identity. That is our setup being bratty, not the song."
   };
@@ -308,6 +308,8 @@ async function testPlayback(video, requester, probeToken, runId) {
   const mount = document.createElement("div");
   mount.id = `probe-player-${Date.now()}`;
   host.appendChild(mount);
+
+  let transient105Retries = 0;
 
   const retirePlayer = () => {
     clearProbeTimers();
@@ -395,6 +397,32 @@ async function testPlayback(video, requester, probeToken, runId) {
     }
   };
 
+  const handleProbeError = (event) => {
+    if (!canFinish()) return;
+    const code = Number(event.data);
+
+    if (code === 105 && transient105Retries < 1) {
+      transient105Retries += 1;
+      clearTimeout(probePassTimer);
+      testingStatus.textContent = "YouTube coughed up mystery error 105. Giving it one clean retry without banning the song…";
+      probePassTimer = setTimeout(() => {
+        if (!canFinish()) return;
+        try {
+          event.target.mute();
+          event.target.cueVideoById(video.videoId);
+          setTimeout(() => {
+            if (canFinish()) event.target.playVideo();
+          }, 350);
+        } catch {
+          finishFail(105);
+        }
+      }, 1200);
+      return;
+    }
+
+    finishFail(code);
+  };
+
   probePlayer = new YT.Player(mount.id, {
     width: 240,
     height: 240,
@@ -422,7 +450,7 @@ async function testPlayback(video, requester, probeToken, runId) {
           testingStatus.textContent = "Buffering. I am watching it very closely…";
         }
       },
-      onError: (event) => finishFail(Number(event.data)),
+      onError: handleProbeError,
       onAutoplayBlocked: (event) => {
         if (!canFinish()) return;
         testingStatus.textContent = "Autoplay got shy. Checking whether it can at least cue cleanly…";
