@@ -81,6 +81,16 @@ const searchLimiter = rateLimit({
 });
 
 const store = createStore({ io, config });
+const releasedTransient105 = Object.entries(store.state.badVideos)
+  .filter(([, entry]) => Number(entry?.errorCode) === 105 && entry?.source !== "manual");
+for (const [videoId] of releasedTransient105) {
+  delete store.state.badVideos[videoId];
+}
+if (releasedTransient105.length) {
+  store.saveNow();
+  console.log(`Released ${releasedTransient105.length} old error-105 video ban${releasedTransient105.length === 1 ? "" : "s"}.`);
+}
+
 const youtube = createYoutubeService({ config, store });
 registerPublicRoutes({ app, config, store, youtube, requestLimiter, searchLimiter });
 const { isAdmin } = registerAdminRoutes({ app, io, config, store, youtube });
