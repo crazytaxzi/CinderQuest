@@ -29,6 +29,7 @@ const requesterInput = document.querySelector("#requester");
 const noteInput = document.querySelector("#note");
 const detailsStatus = document.querySelector("#details-status");
 const detailsBack = document.querySelector("#details-back");
+const testingCancel = document.querySelector("#testing-cancel");
 const testingVideo = document.querySelector("#testing-video");
 const testingStatus = document.querySelector("#testing-status");
 const resultIcon = document.querySelector("#result-icon");
@@ -46,29 +47,48 @@ let cachedSearchResults = [];
 let currentProbeToken = "";
 let probePlayer = null;
 let probeTimer = null;
+let probePassTimer = null;
 let youtubeApiPromise = null;
-let probeFinished = false;
+let probeFinished = true;
+let probeGeneration = 0;
+let resultMode = "close";
 
 requesterInput.value = localStorage.getItem("cinderRequester") || "";
+
+function playbackLabel(status) {
+  const labels = {
+    idle: "stage is hungry",
+    loading: "waking the stage",
+    playing: "making noise",
+    paused: "holding its breath",
+    buffering: "YouTube is thinking",
+    cued: "ready to bite",
+    ended: "finished misbehaving",
+    halted: "stage was restrained"
+  };
+  return labels[String(status || "idle").toLowerCase()] || String(status || "idle");
+}
 
 function render(state) {
   currentState = state;
   streamName.textContent = state.settings.streamName;
-  document.title = `${state.settings.streamName} · Song Requests`;
-  queueState.textContent = state.settings.queueOpen ? "Queue open" : "Queue closed";
+  document.title = `${state.settings.streamName} · CinderQuest`;
+  queueState.textContent = state.settings.queueOpen ? "The pit is open" : "Cinder shut the door";
   queueState.className = `pill ${state.settings.queueOpen ? "live" : "closed"}`;
   linkForm.querySelector("button").disabled = !state.settings.queueOpen;
   searchForm.querySelector("button").disabled = !state.settings.queueOpen;
-  limit.textContent = `Max ${duration(state.settings.maxDurationSec)}`;
-  queueCount.textContent = `${state.queue.length} waiting`;
-  playbackState.textContent = state.playback?.status || "idle";
+  limit.textContent = `Keep it under ${duration(state.settings.maxDurationSec)}`;
+  queueCount.textContent = state.queue.length === 1
+    ? "1 song waiting"
+    : `${state.queue.length} songs waiting`;
+  playbackState.textContent = playbackLabel(state.playback?.status);
   searchForm.hidden = !state.settings.allowSearch;
   searchDivider.hidden = !state.settings.allowSearch;
 
   renderNow(nowPlaying, state);
   queueList.innerHTML = state.queue.length
     ? state.queue.map((item, index) => queueItemHtml(item, index + 1, false)).join("")
-    : `<div class="empty">The queue is empty. You know what to do.</div>`;
+    : `<div class="empty">The queue is naked. Somebody fix that.</div>`;
 }
 
 function showStep(step) {
@@ -79,17 +99,48 @@ function showStep(step) {
   dialog.scrollTop = 0;
 }
 
-function closeDialog() {
+function clearProbeTimers() {
   clearTimeout(probeTimer);
-  if (probePlayer?.stopVideo) {
-    try { probePlayer.stopVideo(); } catch { /* already gone */ }
-  }
-  if (dialog.open) dialog.close();
-  currentProbeToken = "";
-  probeFinished = false;
+  clearTimeout(probePassTimer);
+  probeTimer = null;
+  probePassTimer = null;
 }
 
-function videoCard(video, actionLabel = "Choose Me") {
+function destroyProbePlayer() {
+  const player = probePlayer;
+  probePlayer = null;
+  if (player?.destroy) {
+    try { player.destroy(); } catch { /* YouTube already pulled it apart */ }
+  } else if (player?.stopVideo) {
+    try { player.stopVideo(); } catch { /* nothing left to stop */ }
+  }
+  document.querySelector("#probe-player")?.replaceChildren();
+}
+
+function cancelProbeOnServer(token) {
+  if (!token) return;
+  api(`/api/requests/probe/${encodeURIComponent(token)}`, {
+    method: "DELETE"
+  }).catch(() => {});
+}
+
+function closeDialog() {
+  const token = currentProbeToken;
+  probeGeneration += 1;
+  probeFinished = true;
+  currentProbeToken = "";
+  clearProbeTimers();
+  destroyProbePlayer();
+  cancelProbeOnServer(token);
+
+  if (dialog.open) dialog.close();
+  resultMode = "close";
+  selectedVideo = null;
+  detailsStatus.textContent = "";
+  testingStatus.textContent = "";
+}
+
+function videoCard(video, actionLabel = "Choose This One") {
   return `
     <article class="search-result-card" data-video-id="${escapeHtml(video.videoId)}">
       <img class="thumb" src="${escapeHtml(video.thumbnail)}" alt="">
@@ -112,29 +163,34 @@ function renderSelectedVideo(video) {
 
 async function runSearch({ notice = "" } = {}) {
   const query = currentSearchQuery.trim();
-  if (query.length < 2) return;
+  if (query.length < 2) {
+    statusNode.textContent = "Give me at least two characters to hunt with.";
+    statusNode.className = "status bad";
+    searchInput.focus();
+    return;
+  }
 
   showStep(searchStep);
-  searchNotice.textContent = notice || "Searching YouTube…";
+  searchNotice.textContent = notice || "Digging through YouTube's closet…";
   searchNotice.className = "status";
-  searchResults.innerHTML = `<div class="empty">Searching…</div>`;
+  searchResults.innerHTML = `<div class="empty">Hunting for something worth touching…</div>`;
   searchResultCount.textContent = "";
 
   try {
     const result = await api(`/api/search?q=${encodeURIComponent(query)}`);
     cachedSearchResults = result.items;
-    searchResultCount.textContent = `${result.items.length} choices`;
+    searchResultCount.textContent = `${result.items.length} tempting option${result.items.length === 1 ? "" : "s"}`;
     searchNotice.textContent = notice || (result.excludedCount
-      ? `${result.excludedCount} result(s) were filtered before you ever had to touch them.`
-      : "Choose a result to continue.");
+      ? `I quietly threw out ${result.excludedCount} result${result.excludedCount === 1 ? "" : "s"} that would have wasted your time.`
+      : "Pick the one that looks least likely to disappoint me.");
     searchNotice.className = "status good";
     searchResults.innerHTML = result.items.length
       ? result.items.map((item) => videoCard(item)).join("")
-      : `<div class="empty">No playable results survived the filter.</div>`;
+      : `<div class="empty">Nothing playable survived. Try a dirtier search.</div>`;
   } catch (error) {
     searchNotice.textContent = error.message;
     searchNotice.className = "status bad";
-    searchResults.innerHTML = `<div class="empty">Search did not complete.</div>`;
+    searchResults.innerHTML = `<div class="empty">YouTube refused to cooperate. Rude.</div>`;
   }
 }
 
@@ -153,18 +209,25 @@ function loadYouTubeApi() {
   if (youtubeApiPromise) return youtubeApiPromise;
 
   youtubeApiPromise = new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      callback();
+    };
+
     const previous = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
+    window.onYouTubeIframeAPIReady = () => settle(() => {
       if (typeof previous === "function") previous();
       resolve();
-    };
+    });
 
     const script = document.createElement("script");
     script.src = "https://www.youtube.com/iframe_api";
     script.async = true;
-    script.onerror = () => reject(new Error("YouTube's test player could not be loaded."));
+    script.onerror = () => settle(() => reject(new Error("YouTube refused to bring me the test player.")));
     document.head.appendChild(script);
-    setTimeout(() => reject(new Error("YouTube's test player took too long to load.")), 12_000);
+    setTimeout(() => settle(() => reject(new Error("YouTube took too long getting dressed for the test."))), 12_000);
   });
 
   return youtubeApiPromise;
@@ -172,28 +235,33 @@ function loadYouTubeApi() {
 
 function playerErrorMessage(code) {
   const messages = {
-    2: "YouTube rejected the video identifier or player request.",
-    5: "YouTube could not play this video in the HTML5 player.",
-    100: "This video was removed, made private, or could not be found.",
-    101: "The video owner does not permit embedded playback.",
-    105: "YouTube rejected this video during the playback compatibility check.",
-    150: "The video owner does not permit embedded playback.",
-    153: "YouTube could not verify this site's player identity. The video was not blocked because this is a server configuration issue."
+    2: "YouTube rejected the video ID before I could even tease it.",
+    5: "YouTube's HTML5 player could not handle this one.",
+    100: "This video vanished, went private, or never existed in the first place.",
+    101: "The owner locked this video out of embedded players.",
+    105: "YouTube rejected this video during the compatibility test.",
+    150: "The owner locked this video out of embedded players.",
+    153: "YouTube could not verify this site's player identity. That is our setup being bratty, not the song."
   };
-  return messages[Number(code)] || `YouTube playback failed with error ${code}.`;
+  return messages[Number(code)] || `YouTube threw playback error ${code}. Charming.`;
 }
 
 async function beginProbe() {
   const requester = requesterInput.value.trim();
   if (!requester) {
-    detailsStatus.textContent = "Give me a display name first.";
+    detailsStatus.textContent = "Give me a name so I know who to blame.";
     detailsStatus.className = "status bad";
     requesterInput.focus();
     return;
   }
+  if (!selectedVideo?.videoId) {
+    detailsStatus.textContent = "The song slipped away. Pick it again.";
+    detailsStatus.className = "status bad";
+    return;
+  }
 
   localStorage.setItem("cinderRequester", requester);
-  detailsStatus.textContent = "Reserving the request and preparing its playback test…";
+  detailsStatus.textContent = "Holding your place while I make YouTube prove itself…";
   detailsStatus.className = "status";
   detailsForm.querySelector('button[type="submit"]').disabled = true;
 
@@ -207,14 +275,17 @@ async function beginProbe() {
       })
     });
 
+    const runId = ++probeGeneration;
     currentProbeToken = prepared.probeToken;
+    probeFinished = false;
+
     testingVideo.innerHTML = `
       <strong>${escapeHtml(prepared.video.title)}</strong>
       <div class="small">${escapeHtml(prepared.video.channelTitle)} · ${duration(prepared.video.durationSec)}</div>`;
-    testingStatus.textContent = "Loading a muted YouTube player…";
+    testingStatus.textContent = "Waking a tiny muted player…";
     testingStatus.className = "status";
     showStep(testingStep);
-    await testPlayback(prepared.video, requester);
+    await testPlayback(prepared.video, requester, prepared.probeToken, runId);
   } catch (error) {
     detailsStatus.textContent = error.message;
     detailsStatus.className = "status bad";
@@ -223,72 +294,104 @@ async function beginProbe() {
   }
 }
 
-async function testPlayback(video, requester) {
-  clearTimeout(probeTimer);
-  probeFinished = false;
+async function testPlayback(video, requester, probeToken, runId) {
+  clearProbeTimers();
   await loadYouTubeApi();
 
-  if (probePlayer?.destroy) {
-    try { probePlayer.destroy(); } catch { /* old player already removed */ }
-  }
+  const runIsCurrent = () => runId === probeGeneration && dialog.open;
+  const canFinish = () => runIsCurrent() && !probeFinished && currentProbeToken === probeToken;
+
+  if (!canFinish()) return;
+  destroyProbePlayer();
+
   const host = document.querySelector("#probe-player");
-  host.innerHTML = "";
   const mount = document.createElement("div");
   mount.id = `probe-player-${Date.now()}`;
   host.appendChild(mount);
 
+  const retirePlayer = () => {
+    clearProbeTimers();
+    destroyProbePlayer();
+  };
+
   const finishPass = async () => {
-    if (probeFinished) return;
+    if (!canFinish()) return;
     probeFinished = true;
-    clearTimeout(probeTimer);
-    try { probePlayer?.pauseVideo(); } catch { /* no-op */ }
-    testingStatus.textContent = "Playback accepted. Adding it to the queue…";
+    testingStatus.textContent = "It behaved. Sliding it into the queue…";
     testingStatus.className = "status good";
+    retirePlayer();
 
     try {
-      const result = await api(`/api/requests/probe/${encodeURIComponent(currentProbeToken)}/pass`, {
+      const result = await api(`/api/requests/probe/${encodeURIComponent(probeToken)}/pass`, {
         method: "POST",
         body: JSON.stringify({ requester })
       });
+      if (!runIsCurrent()) return;
+      currentProbeToken = "";
       showResult({
         good: true,
-        title: "It passed.",
+        title: "It's in. Try not to look too smug.",
         message: result.position
-          ? `${result.message} Queue position: ${result.position}.`
-          : result.message
+          ? `${result.message} It is sitting at position ${result.position}.`
+          : result.message,
+        mode: "close"
       });
       requestInput.value = "";
       searchInput.value = "";
-      setTimeout(closeDialog, 1800);
     } catch (error) {
-      showResult({ good: false, title: "The queue changed underneath us.", message: error.message });
+      if (!runIsCurrent()) return;
+      currentProbeToken = "";
+      showResult({
+        good: false,
+        title: "The queue moved while I was touching it.",
+        message: error.message,
+        mode: selectedOrigin === "search" ? "search" : "close"
+      });
     }
   };
 
+  const schedulePass = (delayMs, message) => {
+    if (!canFinish()) return;
+    testingStatus.textContent = message;
+    clearTimeout(probePassTimer);
+    probePassTimer = setTimeout(() => {
+      if (canFinish()) finishPass();
+    }, delayMs);
+  };
+
   const finishFail = async (code, explicitReason = "") => {
-    if (probeFinished) return;
+    if (!canFinish()) return;
     probeFinished = true;
-    clearTimeout(probeTimer);
     const reason = explicitReason || playerErrorMessage(code);
+    retirePlayer();
 
     try {
-      const result = await api(`/api/requests/probe/${encodeURIComponent(currentProbeToken)}/fail`, {
+      const result = await api(`/api/requests/probe/${encodeURIComponent(probeToken)}/fail`, {
         method: "POST",
         body: JSON.stringify({ requester, errorCode: Number(code || 0), reason })
       });
+      if (!runIsCurrent()) return;
+      currentProbeToken = "";
       showResult({
         good: false,
-        title: result.blocked ? "This one cannot be played." : "Playback could not be verified.",
+        title: result.blocked ? "Nope. This one betrayed us." : "I could not get a clean answer.",
         message: result.blocked
-          ? `${reason} It has been added to the blocked video IDs and removed from future search results.`
+          ? `${reason} I blocked that video ID so it cannot drag anyone through this again.`
           : reason,
-        chooseAnother: selectedOrigin === "search",
+        mode: selectedOrigin === "search" ? "search" : "close",
         returnToSearchNotice: result.blocked
-          ? `${video.title} failed its playback test and was removed. Choose another result.`
-          : "That result could not be verified. Choose another one."
+          ? `I removed “${video.title}.” Pick another temptation.`
+          : "That one never proved itself. Pick another."
       });
     } catch (error) {
-      showResult({ good: false, title: "The test failed awkwardly.", message: error.message, chooseAnother: selectedOrigin === "search" });
+      if (!runIsCurrent()) return;
+      currentProbeToken = "";
+      showResult({
+        good: false,
+        title: "The test tripped over its own heels.",
+        message: error.message,
+        mode: selectedOrigin === "search" ? "search" : "close"
+      });
     }
   };
 
@@ -304,45 +407,63 @@ async function testPlayback(video, requester) {
     },
     events: {
       onReady: (event) => {
+        if (!canFinish()) return;
         event.target.mute();
-        testingStatus.textContent = "Probing the embed now…";
+        testingStatus.textContent = "Testing the actual embed. No metadata sweet-talk allowed…";
         event.target.loadVideoById(video.videoId);
       },
       onStateChange: (event) => {
-        if ([YT.PlayerState.PLAYING, YT.PlayerState.BUFFERING, YT.PlayerState.CUED].includes(event.data)) {
-          finishPass();
+        if (!canFinish()) return;
+        if (event.data === YT.PlayerState.PLAYING) {
+          schedulePass(900, "It is actually playing. Giving it one second to stay honest…");
+        } else if (event.data === YT.PlayerState.CUED) {
+          schedulePass(2200, "It cued cleanly. Waiting a moment in case YouTube changes its mind…");
+        } else if (event.data === YT.PlayerState.BUFFERING) {
+          testingStatus.textContent = "Buffering. I am watching it very closely…";
         }
       },
       onError: (event) => finishFail(Number(event.data)),
       onAutoplayBlocked: (event) => {
-        testingStatus.textContent = "Autoplay was blocked; checking whether the video can at least be cued…";
-        try { event.target.cueVideoById(video.videoId); } catch { finishFail(0, "The browser blocked the compatibility test."); }
+        if (!canFinish()) return;
+        testingStatus.textContent = "Autoplay got shy. Checking whether it can at least cue cleanly…";
+        try {
+          event.target.mute();
+          event.target.cueVideoById(video.videoId);
+        } catch {
+          finishFail(0, "The browser would not let the compatibility test finish.");
+        }
       }
     }
   });
 
   probeTimer = setTimeout(() => {
+    if (!canFinish()) return;
     const state = probePlayer?.getPlayerState?.();
-    if ([YT.PlayerState.PLAYING, YT.PlayerState.BUFFERING, YT.PlayerState.CUED].includes(state)) finishPass();
-    else finishFail(0, "The playback test timed out. The video was not blocked because YouTube never returned a definitive error.");
-  }, 12_000);
+    if ([YT.PlayerState.PLAYING, YT.PlayerState.CUED].includes(state)) {
+      finishPass();
+    } else {
+      finishFail(0, "The test timed out without a real YouTube error, so I did not block the song.");
+    }
+  }, 15_000);
 }
 
-function showResult({ good, title, message, chooseAnother = false, returnToSearchNotice = "" }) {
+function showResult({ good, title, message, mode = "close", returnToSearchNotice = "" }) {
+  resultMode = mode;
   resultIcon.textContent = good ? "✓" : "!";
   resultIcon.className = `result-icon ${good ? "good" : "bad"}`;
-  resultEyebrow.textContent = good ? "Queue accepted" : "Request rejected";
+  resultEyebrow.textContent = good ? "Cinder approves" : "Cinder says no";
   resultTitle.textContent = title;
   resultMessage.textContent = message;
-  resultPrimary.textContent = good ? "Done" : (chooseAnother ? "Back to Results" : "Close");
+  resultPrimary.textContent = mode === "search" ? "Show Me the Survivors" : "Done Here";
   resultPrimary.dataset.notice = returnToSearchNotice;
-  resultSecondary.hidden = true;
+  resultSecondary.hidden = mode !== "search";
+  resultSecondary.textContent = "Close This Mess";
   showStep(resultStep);
 }
 
 linkForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  statusNode.textContent = "Checking that link…";
+  statusNode.textContent = "Let me inspect that link…";
   statusNode.className = "status";
   try {
     const result = await api("/api/video-preview", {
@@ -380,9 +501,11 @@ detailsBack.addEventListener("click", () => {
   else closeDialog();
 });
 
+testingCancel?.addEventListener("click", closeDialog);
+
 resultPrimary.addEventListener("click", async () => {
-  if (selectedOrigin === "search" && !resultIcon.classList.contains("good")) {
-    await runSearch({ notice: resultPrimary.dataset.notice || "Choose another result." });
+  if (resultMode === "search") {
+    await runSearch({ notice: resultPrimary.dataset.notice || "Pick another one." });
   } else {
     closeDialog();
   }
@@ -391,15 +514,12 @@ resultPrimary.addEventListener("click", async () => {
 resultSecondary.addEventListener("click", closeDialog);
 dialogClose.addEventListener("click", closeDialog);
 dialog.addEventListener("cancel", (event) => {
-  if (!testingStep.hidden && !probeFinished) {
-    event.preventDefault();
-    return;
-  }
+  event.preventDefault();
   closeDialog();
 });
 
 dialog.addEventListener("click", (event) => {
-  if (event.target === dialog && testingStep.hidden) closeDialog();
+  if (event.target === dialog) closeDialog();
 });
 
 socket.on("state:update", render);
