@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cinder Song Request Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Oxanium:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="app-page dashboard-page">
+  <div class="page-projector" aria-hidden="true"></div>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="sigel">C</div>
+        <div>
+          <h1>Control Room</h1>
+          <p>Queue discipline with just enough menace.</p>
+        </div>
+      </div>
+      <nav class="navlinks">
+        <a href="/" target="_blank">Request page</a>
+        <a href="/player" target="_blank">Player stage</a>
+        <a href="/overlay" target="_blank">OBS overlay</a>
+      </nav>
+    </header>
+
+    <section id="login-card" class="card setup-screen">
+      <span class="eyebrow">Streamer access</span>
+      <h2>Hand over the control token.</h2>
+      <p class="muted">It stays in this browser's local storage. Do not paste it in chat unless chaos is your kink.</p>
+      <form id="login-form" class="form-grid">
+        <label>Admin token<input id="token-input" type="password" autocomplete="current-password" required></label>
+        <button class="primary">Unlock Dashboard</button>
+        <div id="login-status" class="status"></div>
+      </form>
+    </section>
+
+    <div id="dashboard" hidden>
+      <div class="dashboard-grid">
+        <div class="stack">
+          <section class="card">
+            <div class="section-title"><h2>Now playing</h2><span id="player-connection" class="pill">Player unknown</span></div>
+            <div id="now-playing"></div>
+            <div class="controls" style="margin-top:15px">
+              <button class="primary" data-command="play">Play</button>
+              <button class="ghost" data-command="pause">Pause</button>
+              <button class="danger" id="skip-button">Skip / Next</button>
+              <button class="ghost" data-command="mute">Mute</button>
+              <button class="ghost" data-command="unmute">Unmute</button>
+            </div>
+            <label style="margin-top:14px">Volume
+              <input id="volume" type="range" min="0" max="100" step="1">
+            </label>
+          </section>
+
+          <section class="card">
+            <div class="section-title">
+              <h2>Request queue</h2>
+              <div class="inline">
+                <span id="pending-count" class="pill"></span>
+                <button id="refresh-button" class="ghost">Refresh</button>
+              </div>
+            </div>
+            <div id="queue-list" class="queue-list"></div>
+          </section>
+
+          <section class="card">
+            <div class="section-title"><h2>Recent history</h2><span class="pill">Last 100</span></div>
+            <div id="history-list" class="history-list"></div>
+          </section>
+
+          <section class="card">
+            <div class="section-title"><h2>Blocked video IDs</h2><span id="blocked-count" class="pill">0 blocked</span></div>
+            <div id="blocked-list" class="history-list"></div>
+          </section>
+        </div>
+
+        <aside class="stack">
+          <section class="card">
+            <div class="section-title"><h2>Fallback playlist</h2><span id="playlist-count" class="pill"></span></div>
+            <p id="playlist-title" class="muted">No playlist loaded.</p>
+            <p id="playlist-meta" class="small"></p>
+            <p id="playlist-filter-summary" class="small"></p>
+            <form id="playlist-form" class="form-grid">
+              <label>YouTube playlist URL
+                <input id="playlist-input" placeholder="https://www.youtube.com/playlist?list=...">
+              </label>
+              <button class="secondary">Import Playlist</button>
+              <button id="clear-playlist" type="button" class="ghost">Clear Playlist</button>
+              <button id="clear-quarantine" type="button" class="ghost">Retry Quarantined Videos</button>
+              <div id="playlist-status" class="status"></div>
+            </form>
+          </section>
+
+          <section class="card">
+            <div class="section-title"><h2>Rules & settings</h2><span class="pill">Saved live</span></div>
+            <form id="settings-form" class="form-grid">
+              <label>Stream name<input id="streamName"></label>
+              <div class="settings-grid">
+                <label class="check"><input id="queueOpen" type="checkbox"> Queue open</label>
+                <label class="check"><input id="requireApproval" type="checkbox"> Require approval</label>
+                <label class="check"><input id="allowDuplicates" type="checkbox"> Allow duplicates</label>
+                <label class="check"><input id="allowSearch" type="checkbox"> Enable search</label>
+              </div>
+              <div class="settings-grid">
+                <label>Max queue<input id="maxQueue" type="number" min="1" max="500"></label>
+                <label>Max song seconds<input id="maxDurationSec" type="number" min="30" max="7200"></label>
+                <label>Cooldown seconds<input id="cooldownSec" type="number" min="0" max="86400"></label>
+                <label>Per-user active limit<input id="maxActivePerUser" type="number" min="1" max="20"></label>
+              </div>
+              <label>Fallback mode
+                <select id="fallbackMode">
+                  <option value="shuffle">Shuffle</option>
+                  <option value="sequential">Sequential</option>
+                </select>
+              </label>
+              <label>Blocked keywords, one per line<textarea id="blockedKeywords" rows="5"></textarea></label>
+              <label>Blocked channel IDs or exact names<textarea id="blockedChannels" rows="4"></textarea></label>
+              <button class="primary">Save Settings</button>
+              <div id="settings-status" class="status"></div>
+            </form>
+          </section>
+
+          <section class="card">
+            <h3 style="margin-top:0">OBS source</h3>
+            <p class="small">Add a Browser Source using <code id="overlay-url"></code>. Recommended size: 900 × 220. Keep the actual YouTube player visible in the Player Stage window or show it on stream.</p>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/dashboard.js"></script>
+</body>
+</html>
