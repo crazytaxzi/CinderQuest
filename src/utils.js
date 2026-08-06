@@ -73,12 +73,12 @@ export const requesterKey = (name, ip) => crypto
 
 export function playerErrorMessage(code) {
   return ({
-    2: "YouTube rejected the video identifier or player request.",
-    5: "YouTube could not play this video in the HTML5 player.",
-    100: "This video was removed, private, or missing.",
-    101: "The owner disabled embedded playback.",
-    105: "YouTube rejected this video during the compatibility check.",
-    150: "The owner disabled embedded playback.",
-    153: "YouTube could not verify the player origin or referrer."
-  })[Number(code)] || `YouTube playback failed with error ${code || "unknown"}.`;
+    2: "YouTube rejected the video ID before I could even tease it.",
+    5: "YouTube's HTML5 player could not handle this one.",
+    100: "This video vanished, went private, or never existed in the first place.",
+    101: "The owner locked this video out of embedded players.",
+    105: "YouTube rejected this video during the compatibility test.",
+    150: "The owner locked this video out of embedded players.",
+    153: "YouTube could not verify the player origin or referrer. That is our setup being bratty, not the song."
+  })[Number(code)] || `YouTube threw playback error ${code || "unknown"}. Charming.`;
 }
