@@ -77,7 +77,7 @@ export function queueItemHtml(item, position = null, controls = false) {
   const status = statusLabels[item.status] || item.status;
 
   return `
-    <article class="queue-item" data-id="${escapeHtml(item.id)}">
+    <article class="queue-item" data-id="${escapeHtml(item.id)}" data-video-id="${escapeHtml(item.videoId)}">
       <img class="thumb" src="${escapeHtml(item.thumbnail)}" alt="">
       <div>
         <h3>${position ? `${position}. ` : ""}${escapeHtml(item.title)}</h3>
@@ -91,6 +91,7 @@ export function queueItemHtml(item, position = null, controls = false) {
             <button class="ghost" data-action="up" title="Push it closer">↑</button>
             <button class="ghost" data-action="down" title="Make it wait">↓</button>
             <button class="secondary" data-action="play">Take It Now</button>` : ""}
+          <button class="warning" data-action="ban">Ban This Video</button>
           <button class="danger" data-action="${item.status === "pending" ? "reject" : "remove"}">
             ${item.status === "pending" ? "Deny It" : "Throw It Out"}
           </button>
