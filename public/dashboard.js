@@ -25,6 +25,7 @@ const settingsForm = document.querySelector("#settings-form");
 const settingsStatus = document.querySelector("#settings-status");
 const volume = document.querySelector("#volume");
 const playerConnection = document.querySelector("#player-connection");
+const banCurrentButton = document.querySelector("#ban-current-button");
 
 document.querySelector("#overlay-url").textContent = `${location.origin}/overlay`;
 tokenInput.value = token;
@@ -45,12 +46,21 @@ function getLines(id) {
 function humanReason(reason = "") {
   return String(reason || "No reason given")
     .replaceAll("viewer_probe", "viewer honesty test")
-    .replaceAll("player", "main player");
+    .replaceAll("player", "main player")
+    .replaceAll("manual", "control room ban button");
+}
+
+function blockedReasonLine(item) {
+  const source = item.errorCode
+    ? `YouTube error ${escapeHtml(item.errorCode)}`
+    : "manually banned";
+  return `${escapeHtml(item.reason || "It failed the player")} · ${source}`;
 }
 
 function render(state) {
   appState = state;
   renderNow(nowPlaying, state);
+  banCurrentButton.disabled = !state.current?.videoId;
 
   const pending = state.queue.filter((item) => item.status === "pending").length;
   pendingCount.textContent = pending
@@ -84,7 +94,7 @@ function render(state) {
         <div class="blocked-id-chip">${escapeHtml(item.videoId)}</div>
         <div>
           <h3>${escapeHtml(item.title || "Mystery video")}</h3>
-          <p>${escapeHtml(item.reason || "It failed the player")} · YouTube error ${escapeHtml(item.errorCode || "?")}</p>
+          <p>${blockedReasonLine(item)}</p>
           <p class="small">Caught by the ${escapeHtml(humanReason(item.source))} · failed ${escapeHtml(item.failureCount || 1)} time${Number(item.failureCount || 1) === 1 ? "" : "s"}</p>
         </div>
         <button class="ghost" type="button" data-unblock-video="${escapeHtml(item.videoId)}">Forgive It</button>
@@ -129,6 +139,20 @@ function render(state) {
   setField("blockedChannels", state.settings.blockedChannels.join("\n"));
 }
 
+async function banVideo(videoId, title, reason) {
+  if (!videoId) return;
+  const label = title || videoId;
+  if (!window.confirm(`Ban “${label}” by video ID? It will be removed from the queue and emergency mixtape.`)) {
+    return;
+  }
+
+  await api(`/api/admin/quarantine/${encodeURIComponent(videoId)}`, {
+    method: "POST",
+    body: JSON.stringify({ reason })
+  }, token);
+  toast("Banished. That video ID is not touching the stage again.");
+}
+
 async function authenticate(nextToken) {
   const result = await api("/api/admin/auth", {
     method: "POST",
@@ -166,6 +190,7 @@ queueList.addEventListener("click", async (event) => {
   if (!button || !item) return;
 
   const id = item.dataset.id;
+  const videoId = item.dataset.videoId;
   const action = button.dataset.action;
   button.disabled = true;
 
@@ -181,6 +206,9 @@ queueList.addEventListener("click", async (event) => {
     } else if (action === "play") {
       await api(`/api/admin/player/play/${id}`, { method: "POST", body: "{}" }, token);
       toast("Taking that one now.");
+    } else if (action === "ban") {
+      const title = item.querySelector("h3")?.textContent?.trim() || videoId;
+      await banVideo(videoId, title, "Cinder manually banned this video from the request queue");
     } else if (action === "reject") {
       await api(`/api/admin/queue/${id}/reject`, {
         method: "POST",
@@ -207,6 +235,23 @@ document.querySelector("#skip-button").addEventListener("click", async () => {
     toast("Gone. Next temptation.");
   } catch (error) {
     toast(error.message, true);
+  }
+});
+
+banCurrentButton.addEventListener("click", async () => {
+  const item = appState?.current;
+  if (!item?.videoId) return;
+  banCurrentButton.disabled = true;
+  try {
+    await banVideo(
+      item.videoId,
+      item.title,
+      "Cinder manually banned this video while it was playing"
+    );
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    banCurrentButton.disabled = !appState?.current?.videoId;
   }
 });
 
