@@ -1,0 +1,24 @@
+name: CinderQuest checks
+
+on:
+  push:
+    branches:
+      - main
+      - agent/hellglass-search-probe
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Check JavaScript syntax
+        run: npm run check
