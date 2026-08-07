@@ -42,6 +42,41 @@ const DEFAULT_STATE = {
   playback: { status: "idle", progressSec: 0, durationSec: 0, updatedAt: null }
 };
 
+function failureReasonCode(errorCode, source = "player") {
+  const code = Number(errorCode || 0);
+  if (source === "manual") return "manual_block";
+  if (code === 100) return "youtube_video_unavailable";
+  if (code === 101 || code === 150) return "youtube_embed_restricted";
+  if (code === 105) return "youtube_player_rejected";
+  return code ? "youtube_player_failure" : "manual_block";
+}
+
+function normalizeBadVideos(records) {
+  const normalized = {};
+  for (const [videoId, raw] of Object.entries(records || {})) {
+    const record = raw && typeof raw === "object" ? raw : {};
+    const source = clean(record.source || "player", 40) || "player";
+    const youtubeError = Number(record.youtubeError ?? record.errorCode ?? 0);
+    const firstFailureAt = record.firstFailureAt || record.firstSeenAt || null;
+    const lastFailureAt = record.lastFailureAt || record.lastSeenAt || firstFailureAt;
+    normalized[videoId] = {
+      ...record,
+      videoId,
+      blocked: true,
+      youtubeError,
+      errorCode: youtubeError,
+      reasonCode: clean(record.reasonCode, 60) || failureReasonCode(youtubeError, source),
+      source,
+      firstFailureAt,
+      lastFailureAt,
+      firstSeenAt: firstFailureAt,
+      lastSeenAt: lastFailureAt,
+      failureCount: Math.max(1, Number(record.failureCount || 1))
+    };
+  }
+  return normalized;
+}
+
 export function createStore({ io, config }) {
   function loadState() {
     try {
@@ -51,7 +86,7 @@ export function createStore({ io, config }) {
         ...structuredClone(DEFAULT_STATE),
         ...saved,
         settings: { ...DEFAULT_STATE.settings, ...(saved.settings || {}) },
-        badVideos: { ...(saved.badVideos || {}) },
+        badVideos: normalizeBadVideos(saved.badVideos),
         fallbackPlaylist: {
           ...DEFAULT_STATE.fallbackPlaylist,
           ...(saved.fallbackPlaylist || {}),
@@ -126,7 +161,7 @@ export function createStore({ io, config }) {
     history: store.state.history.slice(0, 100),
     fallbackPlaylist: store.state.fallbackPlaylist,
     blockedVideos: Object.values(store.state.badVideos)
-      .sort((a, b) => new Date(b.lastSeenAt || 0) - new Date(a.lastSeenAt || 0)),
+      .sort((a, b) => new Date(b.lastFailureAt || b.lastSeenAt || 0) - new Date(a.lastFailureAt || a.lastSeenAt || 0)),
     diagnostics: {
       youtubeApiConfigured: Boolean(config.youtubeApiKey),
       adminTokenConfigured: Boolean(config.adminToken),
@@ -157,14 +192,22 @@ export function createStore({ io, config }) {
   store.markBad = (video, errorCode, reason, source = "player") => {
     const previous = store.state.badVideos[video.videoId] || {};
     const now = new Date().toISOString();
+    const normalizedSource = clean(source, 40) || "player";
+    const youtubeError = Number(errorCode || previous.youtubeError || previous.errorCode || 0);
+    const firstFailureAt = previous.firstFailureAt || previous.firstSeenAt || now;
     store.state.badVideos[video.videoId] = {
       videoId: video.videoId,
       title: clean(video.title || previous.title || "Unknown", 180),
       channelTitle: clean(video.channelTitle || previous.channelTitle, 120),
-      errorCode: Number(errorCode || previous.errorCode || 0),
+      blocked: true,
+      youtubeError,
+      errorCode: youtubeError,
+      reasonCode: failureReasonCode(youtubeError, normalizedSource),
       reason: clean(reason || previous.reason, 180),
-      source: clean(source, 40),
-      firstSeenAt: previous.firstSeenAt || now,
+      source: normalizedSource,
+      firstFailureAt,
+      lastFailureAt: now,
+      firstSeenAt: firstFailureAt,
       lastSeenAt: now,
       failureCount: Number(previous.failureCount || 0) + 1
     };

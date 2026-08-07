@@ -87,7 +87,7 @@ YOUTUBE_QUOTA_TIMEZONE=America/Los_Angeles
 
 ## Search quota protection
 
-CinderQuest now protects YouTube search calls in several layers:
+CinderQuest protects YouTube search calls in several layers:
 
 - Normalizes query spacing and case before cache lookup.
 - Stores search result video IDs in PostgreSQL for up to 30 days.
@@ -103,6 +103,26 @@ CinderQuest now protects YouTube search calls in several layers:
 
 Direct YouTube links also benefit from the PostgreSQL video metadata cache.
 
+## Playback compatibility gate
+
+A metadata flag is not trusted as the final answer. Requests pass through the following gate:
+
+1. `search.list` asks for syndicated, embeddable video candidates when search is used.
+2. `videos.list` checks current metadata including `status.embeddable`, privacy, processing state, region restrictions, age restriction, duration, and whether YouTube supplied an embed player.
+3. The persistent no-touch list is checked before a known-bad video is offered or probed again.
+4. The viewer page creates a real muted YouTube IFrame Player on the same origin as the requester and waits for a stable `PLAYING` or `CUED` state.
+5. Runtime failures from the main player are also remembered when they match the permanent-failure policy.
+
+Error handling is deliberately different depending on what the code means:
+
+- `100` — removed/private/unavailable; permanently blocked until manually forgiven.
+- `101` and `150` — embedded playback denied; permanently blocked as `youtube_embed_restricted` until manually forgiven.
+- `105` — remains a permanent no-touch failure by project policy.
+- `5` — HTML5/player failure; the request fails, but the viewer probe does not permanently poison the video ID.
+- `153` — player identity/referrer problem; the stage halts instead of blaming or banning the song.
+
+No-touch records are saved with structured fields including `blocked`, `youtubeError`, `reasonCode`, `failureCount`, `firstFailureAt`, `lastFailureAt`, and `source`. Older records are normalized when state is loaded, while the existing `errorCode`, `firstSeenAt`, and `lastSeenAt` fields remain for compatibility.
+
 ## Persistent state
 
 Runtime queue data remains in `data/state.json`, including:
@@ -110,9 +130,19 @@ Runtime queue data remains in `data/state.json`, including:
 - queue and recent history
 - rules and volume
 - emergency playlist and cursor
-- blocked video IDs with their failure reason
+- blocked video IDs with their failure reason and runtime failure metadata
 
 YouTube search and metadata cache records live in PostgreSQL.
+
+## Version 0.2.5
+
+- Makes the two-layer embed check explicit: Data API metadata first, real same-origin IFrame playback second.
+- Keeps known-bad video IDs out before another probe or queue attempt.
+- Classifies errors `101` and `150` as `youtube_embed_restricted` in persistent no-touch records.
+- Keeps error `153` out of the no-touch list and treats it as a player identity/referrer setup failure.
+- Stops viewer-probe error `5` from permanently quarantining a video ID.
+- Preserves the requested permanent auto-ban behavior for error `105`.
+- Adds structured no-touch metadata while retaining the old record fields for compatibility.
 
 ## Version 0.2.4
 

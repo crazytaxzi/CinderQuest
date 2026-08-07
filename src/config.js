@@ -24,7 +24,7 @@ export function loadConfig(rootDir) {
     youtubeSearchDisplayLimit: intEnv("YOUTUBE_SEARCH_DISPLAY_LIMIT", 8, 1, 20),
     youtubeQuotaTimezone: String(process.env.YOUTUBE_QUOTA_TIMEZONE || "America/Los_Angeles"),
     permanentVideoErrors: new Set([100, 101, 105, 150]),
-    probeBlockingErrors: new Set([5, 100, 101, 105, 150]),
+    probeBlockingErrors: new Set([100, 101, 105, 150]),
     probeTtlMs: 120_000
   };
 }
