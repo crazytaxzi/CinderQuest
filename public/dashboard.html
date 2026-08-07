@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CinderQuest · Control Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Oxanium:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/layout-fixes.css">
+</head>
+<body class="app-page dashboard-page">
+  <div class="page-projector" aria-hidden="true"></div>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="sigel">C</div>
+        <div>
+          <h1>Cinder's Control Room</h1>
+          <p>You hold the leash. The queue still thinks it has free will.</p>
+        </div>
+      </div>
+      <nav class="navlinks">
+        <a href="/" target="_blank">Open Request Pit</a>
+        <a href="/player" target="_blank">Wake Player Stage</a>
+        <a href="/overlay" target="_blank">Peek at OBS Overlay</a>
+      </nav>
+    </header>
+
+    <section id="login-card" class="card setup-screen">
+      <span class="eyebrow">Streamer access</span>
+      <h2>Prove you’re allowed behind the glass.</h2>
+      <p class="muted">The token stays in this browser. Keep it out of chat unless handing strangers the controls sounds fun to you.</p>
+      <form id="login-form" class="form-grid">
+        <label>The secret little control token<input id="token-input" type="password" autocomplete="current-password" required></label>
+        <button class="primary">Let Me In</button>
+        <div id="login-status" class="status"></div>
+      </form>
+    </section>
+
+    <div id="dashboard" hidden>
+      <div class="dashboard-grid">
+        <div class="stack dashboard-main-stack">
+          <section class="card">
+            <div class="section-title"><h2>Making noise right now</h2><span id="player-connection" class="pill">Feeling for the player…</span></div>
+            <div id="now-playing"></div>
+            <div class="controls" style="margin-top:15px">
+              <button class="primary" data-command="play">Let It Play</button>
+              <button class="ghost" data-command="pause">Hold It</button>
+              <button class="danger" id="skip-button">Throw It Out / Next</button>
+              <button class="warning" id="ban-current-button" disabled>Ban This Video</button>
+              <button class="ghost" data-command="mute">Silence It</button>
+              <button class="ghost" data-command="unmute">Let It Speak</button>
+            </div>
+            <label style="margin-top:14px">How loud do we want the trouble?
+              <input id="volume" type="range" min="0" max="100" step="1">
+            </label>
+          </section>
+
+          <section class="card">
+            <div class="section-title">
+              <h2>Waiting for judgment</h2>
+              <div class="inline">
+                <span id="pending-count" class="pill"></span>
+                <button id="refresh-button" class="ghost">Shake It Awake</button>
+              </div>
+            </div>
+            <div id="queue-list" class="queue-list"></div>
+          </section>
+
+          <section class="card dashboard-scroll-card">
+            <div class="section-title"><h2>Recent victims</h2><span class="pill">Last 100</span></div>
+            <div id="history-list" class="history-list dashboard-scroll-list"></div>
+          </section>
+
+          <section class="card dashboard-scroll-card">
+            <div class="section-title"><h2>Videos that betrayed us</h2><span id="blocked-count" class="pill">Nothing blocked</span></div>
+            <div id="blocked-list" class="history-list dashboard-scroll-list"></div>
+          </section>
+        </div>
+
+        <aside class="stack dashboard-sidebar">
+          <section class="card">
+            <div class="section-title"><h2>Emergency mixtape</h2><span id="playlist-count" class="pill"></span></div>
+            <p id="playlist-title" class="muted">No backup playlist is wearing the collar yet.</p>
+            <p id="playlist-meta" class="small"></p>
+            <p id="playlist-filter-summary" class="small"></p>
+            <form id="playlist-form" class="form-grid">
+              <label>Give me a YouTube playlist
+                <input id="playlist-input" placeholder="https://www.youtube.com/playlist?list=...">
+              </label>
+              <button class="secondary">Inspect and Keep It</button>
+              <button id="clear-playlist" type="button" class="ghost">Strip the Playlist Out</button>
+              <button id="clear-quarantine" type="button" class="ghost">Give Every Blocked Video Another Chance</button>
+              <div id="playlist-status" class="status"></div>
+            </form>
+          </section>
+
+          <section class="card">
+            <div class="section-title"><h2>Boundaries & bad habits</h2><span class="pill">Changes bite immediately</span></div>
+            <form id="settings-form" class="form-grid">
+              <label>What should the pit call itself?<input id="streamName"></label>
+              <div class="settings-grid">
+                <label class="check"><input id="queueOpen" type="checkbox"> Let viewers in</label>
+                <label class="check"><input id="requireApproval" type="checkbox"> Make Cinder approve each one</label>
+                <label class="check"><input id="allowDuplicates" type="checkbox"> Allow repeat offenders</label>
+                <label class="check"><input id="allowSearch" type="checkbox"> Let viewers hunt YouTube</label>
+              </div>
+              <div class="settings-grid">
+                <label>How stuffed can the queue get?<input id="maxQueue" type="number" min="1" max="500"></label>
+                <label>Longest song allowed, in seconds<input id="maxDurationSec" type="number" min="30" max="7200"></label>
+                <label>Seconds between requests<input id="cooldownSec" type="number" min="0" max="86400"></label>
+                <label>Active songs per greedy little viewer<input id="maxActivePerUser" type="number" min="1" max="20"></label>
+              </div>
+              <label>How should the emergency playlist behave?
+                <select id="fallbackMode">
+                  <option value="shuffle">Surprise me</option>
+                  <option value="sequential">Stay in line</option>
+                </select>
+              </label>
+              <label>Words that get a song slapped away, one per line<textarea id="blockedKeywords" rows="5"></textarea></label>
+              <label>Channels that are not welcome here<textarea id="blockedChannels" rows="4"></textarea></label>
+              <button class="primary">Tighten the Rules</button>
+              <div id="settings-status" class="status"></div>
+            </form>
+          </section>
+
+          <section class="card">
+            <h3 style="margin-top:0">Feed OBS the pretty version</h3>
+            <p class="small">Add a Browser Source using <code id="overlay-url"></code>. Give it about 900 × 220 pixels. Keep the real YouTube player visible somewhere on stream so YouTube does not get suspicious.</p>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/dashboard.js"></script>
+</body>
+</html>

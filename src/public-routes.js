@@ -1,0 +1,193 @@
+import crypto from "node:crypto";
+import { clean, normalizeRequester, playerErrorMessage, requesterKey } from "./utils.js";
+
+export function registerPublicRoutes({
+  app,
+  config,
+  store,
+  youtube,
+  database,
+  requestLimiter,
+  searchLimiter
+}) {
+  const probes = new Map();
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [token, session] of probes) {
+      if (session.expiresAt <= now) probes.delete(token);
+    }
+  }, 60_000).unref();
+
+  function makeProbe(video, requester, note, ip) {
+    const token = crypto.randomUUID();
+    probes.set(token, {
+      video,
+      requester,
+      note,
+      requesterKey: requesterKey(requester, ip),
+      expiresAt: Date.now() + config.probeTtlMs
+    });
+    return token;
+  }
+
+  function takeProbe(token, requester, ip) {
+    const safeToken = clean(token, 80);
+    const session = probes.get(safeToken);
+    if (!session || session.expiresAt < Date.now()) {
+      probes.delete(safeToken);
+      return { error: "That playback test went cold. Pick the song again and I’ll give it another squeeze." };
+    }
+    if (session.requester !== requester
+      || session.requesterKey !== requesterKey(requester, ip)) {
+      return { error: "That test belongs to somebody else’s request. Hands off." };
+    }
+    probes.delete(safeToken);
+    return { session };
+  }
+
+  app.get("/api/health", (_req, res) => res.json({
+    ok: true,
+    app: "CinderQuest",
+    youtubeApiConfigured: Boolean(config.youtubeApiKey),
+    postgresCacheReady: database.isReady(),
+    cacheRetentionDays: config.youtubeCacheTtlDays,
+    searchDailyBudget: config.youtubeSearchDailyBudget,
+    time: new Date().toISOString()
+  }));
+
+  app.get("/api/public-state", (_req, res) => res.json(store.publicState()));
+
+  app.get("/api/search", searchLimiter, async (req, res, next) => {
+    try {
+      if (!store.state.settings.allowSearch) {
+        return res.status(403).json({ error: "Search is sleeping. Slip me a YouTube link instead." });
+      }
+      const query = clean(req.query.q, 100);
+      if (query.length < 2) {
+        return res.status(400).json({ error: "Give me at least two characters to hunt with." });
+      }
+
+      const result = await youtube.searchVideos(query);
+      const byId = new Map(result.videos.map((video) => [video.videoId, video]));
+      const items = [];
+      let excludedCount = 0;
+
+      for (const id of result.videoIds) {
+        const video = byId.get(id);
+        if (!video || youtube.contentRule(video)) {
+          excludedCount += 1;
+          continue;
+        }
+        if (items.length < config.youtubeSearchDisplayLimit) {
+          items.push(video);
+        }
+      }
+
+      res.json({
+        items,
+        excludedCount,
+        cacheHit: result.cacheHit,
+        candidatesChecked: result.videoIds.length,
+        freshSearchCallsUsedToday: result.callsUsed,
+        freshSearchDailyBudget: result.dailyBudget
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/video-preview", requestLimiter, async (req, res, next) => {
+    try {
+      const id = youtube.extractVideoId(req.body?.input);
+      if (!id) return res.status(400).json({ error: "That is not a YouTube video link I can sink my teeth into." });
+      const video = await youtube.fetchVideo(id);
+      const error = youtube.contentRule(video);
+      if (error) return res.status(400).json({ error, videoId: id });
+      res.json({ ok: true, video });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/requests/probe", requestLimiter, async (req, res, next) => {
+    try {
+      const requester = normalizeRequester(req.body?.requester);
+      const id = youtube.extractVideoId(req.body?.input || req.body?.videoId);
+      if (!id) return res.status(400).json({ error: "Pick a real YouTube video before asking me to test it." });
+      const video = await youtube.fetchVideo(id);
+      const error = youtube.requestRule(video, requester, req.ip);
+      if (error) return res.status(400).json({ error, videoId: id });
+      res.status(201).json({
+        ok: true,
+        probeToken: makeProbe(video, requester, clean(req.body?.note, 160), req.ip),
+        expiresInSec: config.probeTtlMs / 1000,
+        video
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/requests/probe/:token", requestLimiter, (req, res) => {
+    const token = clean(req.params.token, 80);
+    probes.delete(token);
+    res.status(204).end();
+  });
+
+  app.post("/api/requests/probe/:token/pass", requestLimiter, (req, res) => {
+    const requester = normalizeRequester(req.body?.requester);
+    const result = takeProbe(req.params.token, requester, req.ip);
+    if (result.error) return res.status(410).json({ error: result.error });
+    const { session } = result;
+    const error = youtube.requestRule(session.video, requester, req.ip);
+    if (error) return res.status(400).json({ error });
+    const item = {
+      ...session.video,
+      id: crypto.randomUUID(),
+      requester,
+      requesterKey: session.requesterKey,
+      note: session.note,
+      source: "request",
+      status: store.state.settings.requireApproval ? "pending" : "queued",
+      playbackTestedAt: new Date().toISOString(),
+      requestedAt: new Date().toISOString()
+    };
+    store.state.queue.push(item);
+    store.persist();
+    res.status(201).json({
+      ok: true,
+      item: { ...item, requesterKey: undefined },
+      position: item.status === "queued" ? store.queuePosition(item.id) : null,
+      message: item.status === "pending"
+        ? "It passed my test. Now it is waiting for Cinder’s final judgment."
+        : "It passed. Your song is officially in line."
+    });
+  });
+
+  app.post("/api/requests/probe/:token/fail", requestLimiter, (req, res) => {
+    const requester = normalizeRequester(req.body?.requester);
+    const result = takeProbe(req.params.token, requester, req.ip);
+    if (result.error) return res.status(410).json({ error: result.error });
+    const code = Number(req.body?.errorCode || 0);
+    const reason = clean(req.body?.reason, 180) || playerErrorMessage(code);
+    const blocked = config.probeBlockingErrors.has(code);
+    if (blocked) {
+      store.markBad(result.session.video, code, reason, "viewer_probe");
+      store.persist(true);
+    }
+    res.json({
+      ok: true,
+      blocked,
+      videoId: result.session.video.videoId,
+      reason,
+      message: blocked
+        ? "That video failed the real player test, so I put its ID on the no-touch list."
+        : reason
+    });
+  });
+
+  app.post("/api/requests", requestLimiter, (_req, res) => res.status(409).json({
+    error: "Nice try. Every request has to survive the playback test first."
+  }));
+}
